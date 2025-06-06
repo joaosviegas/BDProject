@@ -51,11 +51,11 @@ CREATE TABLE bilhete (
 	id SERIAL PRIMARY KEY,
 	voo_id INTEGER REFERENCES voo,
 	codigo_reserva INTEGER REFERENCES venda,
-	nome_passegeiro VARCHAR(80),
+	nome_passageiro VARCHAR(80),
 	preco NUMERIC(7,2) NOT NULL,
 	prim_classe BOOLEAN NOT NULL DEFAULT FALSE,
 	lugar VARCHAR(3),
 	no_serie VARCHAR(80),
-	UNIQUE (voo_id, codigo_reserva, nome_passegeiro),
+	UNIQUE (voo_id, codigo_reserva, nome_passageiro),
 	FOREIGN KEY (lugar, no_serie) REFERENCES assento
 );
