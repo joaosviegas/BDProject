@@ -120,6 +120,41 @@ def voos_por_partida(partida):
     
     return jsonify(voos), 200
 
+# /voos/<partida>/<chegada>
+@app.route("/voos/<partida>/<chegada>", methods=("GET",))
+@limiter.limit("1 per second")
+def voos_por_partida_chegada(partida, chegada):
+    """
+    Lista os próximos três voos (número de série do avião e hora
+    de partida) entre o aeroporto de <partida> e o aeroporto
+    de <chegada> para os quais ainda há bilhetes disponíveis.
+    """
+    
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            voos = cur.execute(
+                """
+                SELECT v.no_serie, v.hora_partida
+                FROM voo v
+                JOIN assento a ON a.no_serie = v.no_serie
+                LEFT JOIN bilhete b ON b.voo_id = v.id AND b.lugar = a.lugar AND b.no_serie = a.no_serie
+                WHERE v.partida = %(partida)s
+                AND v.chegada = %(chegada)s
+                AND v.hora_partida > NOW()
+                AND b.id IS NULL  -- lugar ainda não reservado
+                GROUP BY v.id, v.no_serie, v.hora_partida
+                ORDER BY v.hora_partida
+                LIMIT 3;
+
+                """,
+                {
+                    "partida": partida,
+                    "chegada": chegada,
+                },
+            ).fetchall()
+            log.debug(f"Found {cur.rowcount} flights from {partida} to {chegada} with seats available.")
+    
+    return jsonify(voos), 200
 
 
 @app.route("/accounts", methods=("GET",))
