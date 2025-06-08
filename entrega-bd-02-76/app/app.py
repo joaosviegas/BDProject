@@ -151,7 +151,6 @@ def voos_por_partida_chegada(partida, chegada):
     
     return jsonify(voos), 200
 
-# TODO
 # /compra/<voo>/
 @app.route("/compra/<voo>/", methods=("POST",))
 @limiter.limit("1 per second")
@@ -221,7 +220,6 @@ def compra_voo(voo):
 
     return jsonify({"codigo_reserva": codigo_reserva, "bilhete_ids": bilhete_ids}), 201
 
-# TODO
 # /checkin/<bilhete>
 @app.route("/checkin/<bilhete>/", methods=("PUT",))
 @limiter.limit("1 per second")
@@ -230,184 +228,67 @@ def checkin(bilhete):
     Faz o check-in de um bilhete, atribuindo-lhe automaticamente
     um assento da classe correspondente.
     """
-    
     with pool.connection() as conn:
         with conn.cursor() as cur:
             try:
                 with conn.transaction():
-                    # BEGIN is executed, a transaction started
+                    # 1. Buscar info do bilhete
                     cur.execute(
                         """
-                        UPDATE bilhete
-                        SET utilizado = TRUE
-                        WHERE id = %(bilhete_id)s;
+                        SELECT b.voo_id, b.prim_classe, b.no_serie
+                        FROM bilhete b
+                        WHERE b.id = %(bilhete_id)s AND b.lugar IS NULL;
                         """,
                         {"bilhete_id": bilhete},
                     )
-                    log.debug(f"Bilhete {bilhete} marcado como utilizado.")
-            except Exception as e:
-                return jsonify({"message": str(e), "status": "error"}), 500
-            else:
-                # COMMIT is executed at the end of the block.
-                # The connection is in idle state again.
-                log.debug(f"Check-in realizado com sucesso para o bilhete {bilhete}.")
-    
-    return jsonify({"message": "Check-in realizado com sucesso."}), 200
+                    bilhete_row = cur.fetchone()
+                    if not bilhete_row:
+                        return jsonify({"message": "Bilhete não encontrado ou já tem lugar atribuído.", "status": "error"}), 404
 
+                    voo_id = bilhete_row.voo_id
+                    prim_classe = bool(bilhete_row.prim_classe)
+                    no_serie = bilhete_row.no_serie
 
-
-#------------- Codigo do LAB10 ----------------------------
-
-
-
-@app.route("/accounts", methods=("GET",))
-@limiter.limit("1 per second")
-def account_index():
-    """Show all the accounts, most recent first."""
-
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            accounts = cur.execute(
-                """
-                SELECT account_number, branch_name, balance
-                FROM account
-                ORDER BY account_number DESC;
-                """,
-                {},
-            ).fetchall()
-            log.debug(f"Found {cur.rowcount} rows.")
-
-    return jsonify(accounts), 200
-
-
-@app.route("/accounts/<account_number>/update", methods=("GET",))
-@limiter.limit("1 per second")
-def account_update_view(account_number):
-    """Show the page to update the account balance."""
-
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            account = cur.execute(
-                """
-                SELECT account_number, branch_name, balance
-                FROM account
-                WHERE account_number = %(account_number)s;
-                """,
-                {"account_number": account_number},
-            ).fetchone()
-            log.debug(f"Found {cur.rowcount} rows.")
-
-    # At the end of the `connection()` context, the transaction is committed
-    # or rolled back, and the connection returned to the pool.
-
-    if account is None:
-        return jsonify({"message": "Account not found.", "status": "error"}), 404
-
-    return jsonify(account), 200
-
-
-@app.route(
-    "/accounts/<account_number>/update",
-    methods=(
-        "PUT",
-        "POST",
-    ),
-)
-def account_update_save(account_number):
-    """Update the account balance."""
-
-    balance = request.args.get("balance")
-
-    error = None
-
-    if not balance:
-        error = "Balance is required."
-    if not is_decimal(balance):
-        error = "Balance is required to be decimal."
-
-    if error is not None:
-        return jsonify({"message": error, "status": "error"}), 400
-    else:
-        with pool.connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE account
-                    SET balance = %(balance)s
-                    WHERE account_number = %(account_number)s;
-                    """,
-                    {"account_number": account_number, "balance": balance},
-                )
-                # The result of this statement is persisted immediately by the database
-                # because the connection is in autocommit mode.
-                log.debug(f"Updated {cur.rowcount} rows.")
-
-                if cur.rowcount == 0:
-                    return (
-                        jsonify({"message": "Account not found.", "status": "error"}),
-                        404,
-                    )
-
-        # The connection is returned to the pool at the end of the `connection()` context but,
-        # because it is not in a transaction state, no COMMIT is executed.
-
-        return "", 204
-
-
-@app.route(
-    "/accounts/<account_number>/delete",
-    methods=(
-        "DELETE",
-        "POST",
-    ),
-)
-def account_delete(account_number):
-    """Delete the account."""
-
-    with pool.connection() as conn:
-        with conn.cursor() as cur:
-            try:
-                with conn.transaction():
-                    # BEGIN is executed, a transaction started
+                    # 2. Procurar um lugar disponível da classe correta
                     cur.execute(
                         """
-                        DELETE FROM depositor
-                        WHERE account_number = %(account_number)s;
+                        SELECT a.lugar
+                        FROM assento a
+                        WHERE a.no_serie = %(no_serie)s
+                          AND a.prim_classe = %(prim_classe)s
+                          AND a.lugar NOT IN (
+                              SELECT b.lugar
+                              FROM bilhete b
+                              WHERE b.voo_id = %(voo_id)s AND b.no_serie = %(no_serie)s AND b.lugar IS NOT NULL
+                          )
+                        LIMIT 1;
                         """,
-                        {"account_number": account_number},
+                        {
+                            "no_serie": no_serie,
+                            "prim_classe": prim_classe,
+                            "voo_id": voo_id,
+                        },
                     )
+                    lugar_row = cur.fetchone()
+                    if not lugar_row:
+                        return jsonify({"message": "Não há lugares disponíveis nesta classe para este voo.", "status": "error"}), 409
+
+                    lugar = lugar_row.lugar
+
+                    # 3. Atualizar o bilhete com o lugar
                     cur.execute(
                         """
-                        DELETE FROM account
-                        WHERE account_number = %(account_number)s;
+                        UPDATE bilhete
+                        SET lugar = %(lugar)s
+                        WHERE id = %(bilhete_id)s;
                         """,
-                        {"account_number": account_number},
+                        {"lugar": lugar, "bilhete_id": bilhete},
                     )
-                    # These two operations run atomically in the same transaction
+                    log.debug(f"Check-in realizado com sucesso para o bilhete {bilhete}, lugar {lugar}.")
             except Exception as e:
                 return jsonify({"message": str(e), "status": "error"}), 500
-            else:
-                # COMMIT is executed at the end of the block.
-                # The connection is in idle state again.
-                log.debug(f"Deleted {cur.rowcount} rows.")
 
-                if cur.rowcount == 0:
-                    return (
-                        jsonify({"message": "Account not found.", "status": "error"}),
-                        404,
-                    )
-
-    # The connection is returned to the pool at the end of the `connection()` context
-
-    return "", 204
-
-
-@app.route("/ping", methods=("GET",))
-@limiter.exempt
-def ping():
-    log.debug("ping!")
-    return jsonify({"message": "pong!", "status": "success"})
-
+    return jsonify({"message": "Check-in realizado com sucesso.", "lugar": lugar}), 200
 
 if __name__ == "__main__":
     app.run()
