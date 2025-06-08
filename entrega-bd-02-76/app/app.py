@@ -95,11 +95,6 @@ def voos_por_partida(partida):
     e aeroporto de chegada) que partem do aeroporto de <partida>
     até 12h após o momento da consulta.
     """
-    from datetime import datetime, timedelta
-    
-    # Get current time and time 12 hours from now
-    agora = datetime.now()
-    limite_tempo = agora + timedelta(hours=12)
     
     with pool.connection() as conn:
         with conn.cursor() as cur:
@@ -155,6 +150,85 @@ def voos_por_partida_chegada(partida, chegada):
             log.debug(f"Found {cur.rowcount} flights from {partida} to {chegada} with seats available.")
     
     return jsonify(voos), 200
+
+# TODO
+# /compra/<voo>/
+@app.route("/compra/<voo>/", methods=("POST",))
+@limiter.limit("1 per second")
+def compra_voo(voo):
+    """
+    Faz uma compra de um ou mais bilhetes para o <voo>,
+    populando as tabelas <venda> e <bilhete>. Recebe como
+    argumentos o nif do cliente, e uma lista de pares (nome de
+    passageiro, classe de bilhete) especificando os bilhetes a
+    comprar.
+    """
+    
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            try:
+                with conn.transaction():
+                    # BEGIN is executed, a transaction started
+                    cur.execute(
+                        """
+                        INSERT INTO bilhete (voo_id, no_serie, lugar)
+                        VALUES (%(voo_id)s, %(no_serie)s, %(lugar)s)
+                        RETURNING id;
+                        """,
+                        {
+                            "voo_id": voo,
+                            "no_serie": voo,
+                            "lugar": 1,  # Assuming we always book the first seat for simplicity
+                        },
+                    )
+                    bilhete_id = cur.fetchone().id
+                    log.debug(f"Bilhete {bilhete_id} comprado para o voo {voo}.")
+            except Exception as e:
+                return jsonify({"message": str(e), "status": "error"}), 500
+            else:
+                # COMMIT is executed at the end of the block.
+                # The connection is in idle state again.
+                log.debug(f"Bilhete {bilhete_id} comprado com sucesso.")
+    
+    return jsonify({"bilhete_id": bilhete_id}), 201
+
+# TODO
+# /checkin/<bilhete>
+@app.route("/checkin/<bilhete>/", methods=("PUT",))
+@limiter.limit("1 per second")
+def checkin(bilhete):
+    """
+    Faz o check-in de um bilhete, atribuindo-lhe automaticamente
+    um assento da classe correspondente.
+    """
+    
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            try:
+                with conn.transaction():
+                    # BEGIN is executed, a transaction started
+                    cur.execute(
+                        """
+                        UPDATE bilhete
+                        SET utilizado = TRUE
+                        WHERE id = %(bilhete_id)s;
+                        """,
+                        {"bilhete_id": bilhete},
+                    )
+                    log.debug(f"Bilhete {bilhete} marcado como utilizado.")
+            except Exception as e:
+                return jsonify({"message": str(e), "status": "error"}), 500
+            else:
+                # COMMIT is executed at the end of the block.
+                # The connection is in idle state again.
+                log.debug(f"Check-in realizado com sucesso para o bilhete {bilhete}.")
+    
+    return jsonify({"message": "Check-in realizado com sucesso."}), 200
+
+
+
+#------------- Codigo do LAB10 ----------------------------
+
 
 
 @app.route("/accounts", methods=("GET",))
