@@ -147,7 +147,7 @@ with open(output_file, 'w') as f:
             # Generate 1 sale with 2-3 tickets of the same class
             tickets_to_generate = random.randint(2, 3)
             
-            # [Keep existing sale generation code]
+            used_names = set()  # Track used names to avoid duplicates
             
             # Generate multiple tickets for this sale
             for i in range(tickets_to_generate):
@@ -163,12 +163,15 @@ with open(output_file, 'w') as f:
                 sale_time = departure_time - datetime.timedelta(days=days_before)
                 
                 # Write sale insert
-                f.write(f"INSERT INTO venda (codigo_reserva, nif_cliente, balcao, hora)\n")
-                f.write(f"VALUES ({sale_id}, '{nif}', '{counter}', '{sale_time.strftime('%Y-%m-%d %H:%M:%S')}');\n\n")
+                f.write(f"INSERT INTO venda (nif_cliente, balcao, hora)\n")
+                f.write(f"VALUES ('{nif}', '{counter}', '{sale_time.strftime('%Y-%m-%d %H:%M:%S')}');\n\n")
                 
                 # Generate passenger name using Faker
                 passenger_name = fake[locale].name()
                 passenger_name = passenger_name.replace("'", "")
+                while passenger_name in used_names:
+                    passenger_name = fake[locale].name().replace("'", "")
+                used_names.add(passenger_name)
                 
                 # Get seat
                 seat = get_available_seat(flight_id, airplane, is_first_class)
@@ -181,7 +184,7 @@ with open(output_file, 'w') as f:
                 # Write ticket insert
                 field_name = "nome_passageiro"  # Use the correct field name for both classes
                 f.write(f"INSERT INTO bilhete (voo_id, codigo_reserva, {field_name}, preco, prim_classe, lugar, no_serie)\n")
-                f.write(f"VALUES ({flight_id}, {sale_id}, '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, '{seat}', '{airplane}');\n\n")
+                f.write(f"VALUES ({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, '{seat}', '{airplane}');\n\n")
                 
                 ticket_count += 1
                 if is_first_class:
@@ -248,100 +251,82 @@ with open(output_file, 'w') as f:
             sales_for_flight.append(tickets_in_sale)
             remaining_tickets -= tickets_in_sale
         
-        # Now generate the sales and tickets
+        # Agora gera as vendas e bilhetes (mais eficiente, 1 insert por venda, múltiplos bilhetes)
         for tickets_in_sale in sales_for_flight:
-            # Skip if we've reached our target
             if ticket_count >= target_tickets:
                 continue
-                
-            # Select a locale for this customer
+
             locale = random.choice(['pt_PT', 'es_ES', 'fr_FR', 'en_GB', 'it_IT', 'de_DE'])
             country_code = locale.split('_')[1]
-            
-            # Generate customer VAT number based on country
             nif = generate_vat(country_code)
-            
-            # Select random counter (airport)
             counter = random.choice(airports)
-            
-            # Sale time between 1 and 60 days before flight departure
             days_before = random.randint(1, 60)
             sale_time = departure_time - datetime.timedelta(days=days_before)
-            
-            # Write sale insert
-            f.write(f"INSERT INTO venda (codigo_reserva, nif_cliente, balcao, hora)\n")
-            f.write(f"VALUES ({sale_id}, '{nif}', '{counter}', '{sale_time.strftime('%Y-%m-%d %H:%M:%S')}');\n\n")
-            
-            # Generate tickets for this sale
-            first_class_count = min(first_class_to_fill, tickets_in_sale)
-            regular_count = tickets_in_sale - first_class_count
-            
-            # Update counts for next iterations
-            first_class_to_fill -= first_class_count
-            
-            # Generate first class tickets
-            for _ in range(first_class_count):
-                # Generate passenger name using Faker
-                passenger_name = fake[locale].name()
-                passenger_name = passenger_name.replace("'", "")
-                
-                # Get seat (must be valid for this airplane and class)
-                seat = get_available_seat(flight_id, airplane, True)
-                # Add this after the seat check to redirect to regular class when first class is full
-                if not seat:
-                    # Try to get a regular class seat instead when first class is full
-                    seat = get_available_seat(flight_id, airplane, False)
-                    if not seat:
-                        print(f"Warning: No more seats available for flight {flight_id}!")
-                        continue
-                    
-                    # Adjust to regular class pricing and status
-                    price = round(random.uniform(80, 350), 2)
+            if sale_time >= departure_time:
+                sale_time = departure_time - datetime.timedelta(days=1)
+
+            # Gera a venda
+            f.write(f"INSERT INTO venda (nif_cliente, balcao, hora)\n")
+            f.write(f"VALUES ('{nif}', '{counter}', '{sale_time.strftime('%Y-%m-%d %H:%M:%S')}');\n\n")
+
+            # Gera os bilhetes desta venda (garante pelo menos 1 bilhete por venda)
+            bilhetes = []
+            for _ in range(tickets_in_sale):
+                is_first_class = False
+                # Alterna entre classes se possível
+                if first_class_to_fill > 0:
+                    is_first_class = True
+                    first_class_to_fill -= 1
+                elif regular_to_fill > 0:
                     is_first_class = False
-                    
-                    # Write ticket with regular class pricing
-                    f.write(f"INSERT INTO bilhete (voo_id, codigo_reserva, nome_passageiro, preco, prim_classe, lugar, no_serie)\n")
-                    f.write(f"VALUES ({flight_id}, {sale_id}, '{passenger_name}', {price}, FALSE, '{seat}', '{airplane}');\n\n")
-                    
-                    ticket_count += 1
-                    flights_with_regular_class.add(flight_id)
+                    regular_to_fill -= 1
+                else:
                     continue
-                
-                # First class prices between 400-1200
-                price = round(random.uniform(400, 1200), 2)
-                
-                # Write ticket insert
-                f.write(f"INSERT INTO bilhete (voo_id, codigo_reserva, nome_passageiro, preco, prim_classe, lugar, no_serie)\n")
-                f.write(f"VALUES ({flight_id}, {sale_id}, '{passenger_name}', {price}, TRUE, '{seat}', '{airplane}');\n\n")
-                
-                ticket_count += 1
-                flights_with_first_class.add(flight_id)
-            
-            # Generate regular class tickets
-            for _ in range(regular_count):
-                # Generate passenger name using Faker
-                passenger_name = fake[locale].name()
-                passenger_name = passenger_name.replace("'", "")
-                
-                # Get seat (must be valid for this airplane and class)
-                seat = get_available_seat(flight_id, airplane, False)
+
+                passenger_name = fake[locale].name().replace("'", "")
+                seat = get_available_seat(flight_id, airplane, is_first_class)
+                if not seat and is_first_class:
+                    is_first_class = False
+                    seat = get_available_seat(flight_id, airplane, False)
                 if not seat:
-                    print(f"Warning: No more regular class seats available for flight {flight_id}!")
                     continue
-                
-                # Regular prices between 80-350
-                price = round(random.uniform(80, 350), 2)
-                
-                # Write ticket insert
-                f.write(f"INSERT INTO bilhete (voo_id, codigo_reserva, nome_passageiro, preco, prim_classe, lugar, no_serie)\n")
-                f.write(f"VALUES ({flight_id}, {sale_id}, '{passenger_name}', {price}, FALSE, '{seat}', '{airplane}');\n\n")
-                
+
+                price = round(random.uniform(400, 1200), 2) if is_first_class else round(random.uniform(80, 350), 2)
+                bilhetes.append(
+                    f"({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, '{seat}', '{airplane}')"
+                )
                 ticket_count += 1
-                flights_with_regular_class.add(flight_id)
-            
+                if is_first_class:
+                    flights_with_first_class.add(flight_id)
+                else:
+                    flights_with_regular_class.add(flight_id)
+
+            # Garante pelo menos 1 bilhete por venda
+            if len(bilhetes) == 0:
+                is_first_class = regular_to_fill == 0
+                passenger_name = fake[locale].name().replace("'", "")
+                seat = get_available_seat(flight_id, airplane, is_first_class)
+                if not seat and is_first_class:
+                    is_first_class = False
+                    seat = get_available_seat(flight_id, airplane, False)
+                if seat:
+                    price = round(random.uniform(400, 1200), 2) if is_first_class else round(random.uniform(80, 350), 2)
+                    bilhetes.append(
+                        f"({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, '{seat}', '{airplane}')"
+                    )
+                    ticket_count += 1
+                    if is_first_class:
+                        flights_with_first_class.add(flight_id)
+                    else:
+                        flights_with_regular_class.add(flight_id)
+
+            if bilhetes:
+                f.write(
+                    "INSERT INTO bilhete (voo_id, codigo_reserva, nome_passageiro, preco, prim_classe, lugar, no_serie)\nVALUES\n"
+                    + ",\n".join(bilhetes) + ";\n\n"
+                )
             sale_id += 1
-            
-            # Check if we've reached our targets
+
             if ticket_count >= target_tickets:
                 break
     
@@ -404,8 +389,8 @@ with open(output_file, 'w') as f:
                 days_before = random.randint(1, 60)
                 sale_time = departure_time - datetime.timedelta(days=days_before)
                 
-                f.write(f"INSERT INTO venda (codigo_reserva, nif_cliente, balcao, hora)\n")
-                f.write(f"VALUES ({sale_id}, '{nif}', '{counter}', '{sale_time.strftime('%Y-%m-%d %H:%M:%S')}');\n\n")
+                f.write(f"INSERT INTO venda (nif_cliente, balcao, hora)\n")
+                f.write(f"VALUES ('{nif}', '{counter}', '{sale_time.strftime('%Y-%m-%d %H:%M:%S')}');\n\n")
                 
                 # Generate tickets for this sale
                 for _ in range(tickets_in_sale):
@@ -431,7 +416,7 @@ with open(output_file, 'w') as f:
                     # Write ticket insert
                     field_name = "nome_passageiro"  # Correct field name
                     f.write(f"INSERT INTO bilhete (voo_id, codigo_reserva, {field_name}, preco, prim_classe, lugar, no_serie)\n")
-                    f.write(f"VALUES ({flight_id}, {sale_id}, '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, '{seat}', '{airplane}');\n\n")
+                    f.write(f"VALUES ({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, '{seat}', '{airplane}');\n\n")
                     
                     ticket_count += 1
                     if is_first_class:

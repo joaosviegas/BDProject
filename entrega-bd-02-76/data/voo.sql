@@ -1,5 +1,4 @@
--- Voos gerados automaticamente
--- Período: 1 de Janeiro a 31 de Julho de 2025
+-- Popula a tabela voo
 
 INSERT INTO voo (no_serie, hora_partida, hora_chegada, partida, chegada) VALUES
 ('A320-005', '2025-01-01 05:00:00', '2025-01-01 05:52:00', 'LIN', 'BCN'),
