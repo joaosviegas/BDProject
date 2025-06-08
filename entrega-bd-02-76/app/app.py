@@ -163,34 +163,63 @@ def compra_voo(voo):
     passageiro, classe de bilhete) especificando os bilhetes a
     comprar.
     """
-    
+    data = request.get_json()
+    nif = data.get("nif")
+    bilhetes = data.get("bilhetes", [])
+
+    if not nif or not bilhetes:
+        return jsonify({"message": "NIF e bilhetes são obrigatórios.", "status": "error"}), 400
+
     with pool.connection() as conn:
         with conn.cursor() as cur:
             try:
                 with conn.transaction():
-                    # BEGIN is executed, a transaction started
+                    # 1. Inserir venda
                     cur.execute(
                         """
-                        INSERT INTO bilhete (voo_id, no_serie, lugar)
-                        VALUES (%(voo_id)s, %(no_serie)s, %(lugar)s)
-                        RETURNING id;
+                        INSERT INTO venda (nif_cliente, balcao, hora)
+                        VALUES (%s, %s, NOW())
+                        RETURNING codigo_reserva;
                         """,
-                        {
-                            "voo_id": voo,
-                            "no_serie": voo,
-                            "lugar": 1,  # Assuming we always book the first seat for simplicity
-                        },
+                        (nif, "LIS")
                     )
-                    bilhete_id = cur.fetchone().id
-                    log.debug(f"Bilhete {bilhete_id} comprado para o voo {voo}.")
+                    codigo_reserva = cur.fetchone().codigo_reserva
+
+                    # 2. Obter o no_serie do voo
+                    cur.execute(
+                        "SELECT no_serie FROM voo WHERE id = %s;",
+                        (voo,)
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        raise Exception("Voo não encontrado.")
+                    no_serie = row.no_serie
+
+                    bilhete_ids = []
+                    for b in bilhetes:
+                        cur.execute(
+                            """
+                            INSERT INTO bilhete (
+                                voo_id, codigo_reserva, nome_passageiro, preco, prim_classe, lugar, no_serie
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            RETURNING id;
+                            """,
+                            (
+                                voo,
+                                codigo_reserva,
+                                b["nome"],
+                                100,  # ou calcula o preço
+                                b["prim_classe"],
+                                None,      # lugar fica NULL
+                                no_serie   # no_serie correto do voo
+                            )
+                        )
+                        bilhete_ids.append(cur.fetchone().id)
             except Exception as e:
                 return jsonify({"message": str(e), "status": "error"}), 500
-            else:
-                # COMMIT is executed at the end of the block.
-                # The connection is in idle state again.
-                log.debug(f"Bilhete {bilhete_id} comprado com sucesso.")
-    
-    return jsonify({"bilhete_id": bilhete_id}), 201
+
+    return jsonify({"codigo_reserva": codigo_reserva, "bilhete_ids": bilhete_ids}), 201
 
 # TODO
 # /checkin/<bilhete>
