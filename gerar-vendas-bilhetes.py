@@ -123,76 +123,59 @@ flights_with_regular_class = set()
 
 with open(output_file, 'w') as f:
     f.write("BEGIN;\n\n")
-    # First pass: ensure each flight gets at least some tickets
-    print("First pass: Ensuring every flight has some tickets...")
-    flights_to_process = sorted(flights, key=lambda x: x['id'])  # Process by ID to ensure coverage
 
-    for flight in flights_to_process:
+    print("First pass: Ensuring every flight has at least one ticket of each class...")
+    for flight in flights:
         flight_id = flight['id']
         airplane = flight['airplane']
         departure_time = flight['departure_time']
-        
-        # Skip if we've reached our targets
-        if ticket_count >= target_tickets:
-            break
-        
-        # Ensure at least 1 first class and 1 regular class ticket
+
         for is_first_class in [True, False]:
-            # Skip if this flight already has this class of ticket
-            if is_first_class and flight_id in flights_with_first_class:
-                continue
-            if not is_first_class and flight_id in flights_with_regular_class:
+            # Só tenta se houver lugares dessa classe
+            seats_list = first_class_seats[airplane] if is_first_class else regular_seats[airplane]
+            if not seats_list:
                 continue
 
-            # Generate 1 sale with 2-3 tickets of the same class
-            tickets_to_generate = random.randint(2, 3)
-            
-            used_names = set()  # Track used names to avoid duplicates
-            
-            # Generate multiple tickets for this sale
-            for i in range(tickets_to_generate):
-                
-                # Generate 1 sale with 1 ticket
-                locale = random.choice(['pt_PT', 'es_ES', 'fr_FR', 'en_GB', 'it_IT', 'de_DE'])
-                country_code = locale.split('_')[1]
-                nif = generate_vat(country_code)
-                counter = random.choice(airports)
-                
-                # Sale time between 1 and 60 days before flight departure
-                days_before = random.randint(1, 60)
-                sale_time = departure_time - datetime.timedelta(days=days_before)
-                
-                # Write sale insert
-                f.write(f"INSERT INTO venda (nif_cliente, balcao, hora)\n")
-                f.write(f"VALUES ('{nif}', '{counter}', '{sale_time.strftime('%Y-%m-%d %H:%M:%S')}');\n\n")
-                
-                # Generate passenger name using Faker
-                passenger_name = fake[locale].name()
-                passenger_name = passenger_name.replace("'", "")
-                while passenger_name in used_names:
-                    passenger_name = fake[locale].name().replace("'", "")
-                used_names.add(passenger_name)
-                
-                # Get seat
-                seat = get_available_seat(flight_id, airplane, is_first_class)
-                if not seat:
-                    continue  # Skip if no seats available
-                
-                # Price based on class
-                price = round(random.uniform(400, 1200), 2) if is_first_class else round(random.uniform(80, 350), 2)
-                
-                # Write ticket insert
-                field_name = "nome_passageiro"  # Use the correct field name for both classes
-                f.write(f"INSERT INTO bilhete (voo_id, codigo_reserva, {field_name}, preco, prim_classe, lugar, no_serie)\n")
-                f.write(f"VALUES ({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, '{seat}', '{airplane}');\n\n")
-                
-                ticket_count += 1
-                if is_first_class:
-                    flights_with_first_class.add(flight_id)
-                else:
-                    flights_with_regular_class.add(flight_id)
-                
-                sale_id += 1
+            # Só tenta se ainda não tem bilhete dessa classe para este voo
+            already_has = (flight_id in flights_with_first_class) if is_first_class else (flight_id in flights_with_regular_class)
+            if already_has:
+                continue
+
+            locale = random.choice(['pt_PT', 'es_ES', 'fr_FR', 'en_GB', 'it_IT', 'de_DE'])
+            country_code = locale.split('_')[1]
+            nif = generate_vat(country_code)
+            counter = random.choice(airports)
+            days_before = random.randint(1, 60)
+            sale_time = departure_time - datetime.timedelta(days=days_before)
+            if sale_time >= departure_time:
+                sale_time = departure_time - datetime.timedelta(days=1)
+
+            f.write(f"INSERT INTO venda (nif_cliente, balcao, hora)\n")
+            f.write(f"VALUES ('{nif}', '{counter}', '{sale_time.strftime('%Y-%m-%d %H:%M:%S')}');\n\n")
+
+            used_names = set()
+            passenger_name = fake[locale].name().replace("'", "")
+            while passenger_name in used_names:
+                passenger_name = fake[locale].name().replace("'", "")
+            used_names.add(passenger_name)
+
+            seat = get_available_seat(flight_id, airplane, is_first_class)
+            if not seat:
+                continue
+
+            price = round(random.uniform(400, 1200), 2) if is_first_class else round(random.uniform(80, 350), 2)
+            f.write(
+                "INSERT INTO bilhete (voo_id, codigo_reserva, nome_passageiro, preco, prim_classe, lugar, no_serie)\n"
+                f"VALUES ({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, '{seat}', '{airplane}');\n\n"
+            )
+
+            ticket_count += 1
+            if is_first_class:
+                flights_with_first_class.add(flight_id)
+            else:
+                flights_with_regular_class.add(flight_id)
+
+            sale_id += 1
 
     print(f"After first pass: {ticket_count} tickets, {len(flights_with_first_class)} flights with first class, {len(flights_with_regular_class)} flights with regular class")
 
