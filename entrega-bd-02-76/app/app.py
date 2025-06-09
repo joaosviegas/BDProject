@@ -162,9 +162,20 @@ def compra_voo(voo):
     passageiro, classe de bilhete) especificando os bilhetes a
     comprar.
     """
-    data = request.get_json()
-    nif = data.get("nif")
-    bilhetes = data.get("bilhetes", [])
+    if request.is_json:
+        data = request.get_json()
+        nif = data.get("nif")
+        bilhetes = data.get("bilhetes", [])
+    else:
+        nif = request.args.get("nif")
+        nomes = request.args.getlist("nome")
+        classes = request.args.getlist("prim_classe")
+        bilhetes = []
+        for nome, classe in zip(nomes, classes):
+            bilhetes.append({
+                "nome": nome,
+                "prim_classe": True if classe.lower() == "true" else False
+            })
 
     if not nif or not bilhetes:
         return jsonify({"message": "NIF e bilhetes são obrigatórios.", "status": "error"}), 400
@@ -180,7 +191,7 @@ def compra_voo(voo):
                         VALUES (%s, %s, NOW())
                         RETURNING codigo_reserva;
                         """,
-                        (nif, "LIS")
+                        (nif, "LIS") # Define o balcão de compras como "LIS" por default
                     )
                     codigo_reserva = cur.fetchone().codigo_reserva
 
