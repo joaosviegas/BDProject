@@ -191,7 +191,7 @@ def compra_voo(voo):
                         VALUES (%s, %s, NOW())
                         RETURNING codigo_reserva;
                         """,
-                        (nif, "LIS") # Define o balcão de compras como "LIS" por default
+                        (nif, "NULL") # Venda online, balcão é NULL
                     )
                     codigo_reserva = cur.fetchone().codigo_reserva
 

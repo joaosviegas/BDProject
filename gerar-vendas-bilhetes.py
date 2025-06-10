@@ -17,6 +17,9 @@ seats_by_airplane = defaultdict(list)
 first_class_seats = defaultdict(list)
 regular_seats = defaultdict(list)
 
+checkin_limit_date = datetime.datetime(2025, 6, 16)
+target_tickets_per_flight_min = 80
+
 with open('assentos.txt', 'r') as file:
     for line in file:
         if line.startswith('//'):  # Skip comment lines
@@ -131,12 +134,10 @@ with open(output_file, 'w') as f:
         departure_time = flight['departure_time']
 
         for is_first_class in [True, False]:
-            # Só tenta se houver lugares dessa classe
             seats_list = first_class_seats[airplane] if is_first_class else regular_seats[airplane]
             if not seats_list:
                 continue
 
-            # Só tenta se ainda não tem bilhete dessa classe para este voo
             already_has = (flight_id in flights_with_first_class) if is_first_class else (flight_id in flights_with_regular_class)
             if already_has:
                 continue
@@ -159,14 +160,18 @@ with open(output_file, 'w') as f:
                 passenger_name = fake[locale].name().replace("'", "")
             used_names.add(passenger_name)
 
-            seat = get_available_seat(flight_id, airplane, is_first_class)
-            if not seat:
-                continue
+            # Só atribui lugar se o voo for até à data limite de check-in
+            if departure_time <= checkin_limit_date:
+                seat = get_available_seat(flight_id, airplane, is_first_class)
+            else:
+                seat = None
 
             price = round(random.uniform(400, 1200), 2) if is_first_class else round(random.uniform(80, 350), 2)
+            lugar_sql = f"'{seat}'" if seat is not None else 'NULL'
             f.write(
                 "INSERT INTO bilhete (voo_id, codigo_reserva, nome_passageiro, preco, prim_classe, lugar, no_serie)\n"
-                f"VALUES ({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, '{seat}', '{airplane}');\n\n"
+                f"VALUES ({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, "
+                f"{'TRUE' if is_first_class else 'FALSE'}, {lugar_sql}, '{airplane}');\n\n"
             )
 
             ticket_count += 1
@@ -189,10 +194,13 @@ with open(output_file, 'w') as f:
         airplane = flight['airplane']
         departure_time = flight['departure_time']
         is_past_flight = departure_time < current_date
-        
-        # Calculate target occupancy (higher for past flights)
+
+        # OCUPAÇÃO MAIS REALISTA: aumentar variação e ocupação média
         seats_total = len(seats_by_airplane[airplane])
-        occupancy_target = random.uniform(0.75, 0.98) if is_past_flight else random.uniform(0.65, 0.90)
+        if is_past_flight:
+            occupancy_target = random.uniform(0.85, 0.99)
+        else:
+            occupancy_target = random.uniform(0.55, 0.90)
         seats_to_fill = int(seats_total * occupancy_target)
         
         # Ensure at least some first class and regular seats are filled
@@ -236,7 +244,10 @@ with open(output_file, 'w') as f:
         
         # Agora gera as vendas e bilhetes (mais eficiente, 1 insert por venda, múltiplos bilhetes)
         for tickets_in_sale in sales_for_flight:
-            if ticket_count >= target_tickets:
+
+            flight_tickets = sum(1 for t in assigned_seats[flight_id])
+            if flight_tickets >= target_tickets_per_flight_min:
+                # Este voo já tem ocupação suficiente
                 continue
 
             locale = random.choice(['pt_PT', 'es_ES', 'fr_FR', 'en_GB', 'it_IT', 'de_DE'])
@@ -267,16 +278,23 @@ with open(output_file, 'w') as f:
                     continue
 
                 passenger_name = fake[locale].name().replace("'", "")
-                seat = get_available_seat(flight_id, airplane, is_first_class)
+                if departure_time <= checkin_limit_date:
+                    seat = get_available_seat(flight_id, airplane, is_first_class)
+                else:
+                    seat = None
                 if not seat and is_first_class:
                     is_first_class = False
-                    seat = get_available_seat(flight_id, airplane, False)
+                    if departure_time <= checkin_limit_date:
+                        seat = get_available_seat(flight_id, airplane, False)
+                    else:
+                        seat = None
                 if not seat:
                     continue
-
+                
+                lugar_sql = f"'{seat}'" if seat is not None else 'NULL'
                 price = round(random.uniform(400, 1200), 2) if is_first_class else round(random.uniform(80, 350), 2)
                 bilhetes.append(
-                    f"({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, '{seat}', '{airplane}')"
+                    f"({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, {lugar_sql}, '{airplane}')"
                 )
                 ticket_count += 1
                 if is_first_class:
@@ -288,14 +306,23 @@ with open(output_file, 'w') as f:
             if len(bilhetes) == 0:
                 is_first_class = regular_to_fill == 0
                 passenger_name = fake[locale].name().replace("'", "")
-                seat = get_available_seat(flight_id, airplane, is_first_class)
+                if departure_time <= checkin_limit_date:
+                    seat = get_available_seat(flight_id, airplane, is_first_class)
+                else:
+                    seat = None
                 if not seat and is_first_class:
                     is_first_class = False
-                    seat = get_available_seat(flight_id, airplane, False)
+                    if departure_time <= checkin_limit_date:
+                        seat = get_available_seat(flight_id, airplane, False)
+                    else:
+                        seat = None
+
+                lugar_sql = f"'{seat}'" if seat is not None else 'NULL'
+
                 if seat:
                     price = round(random.uniform(400, 1200), 2) if is_first_class else round(random.uniform(80, 350), 2)
                     bilhetes.append(
-                        f"({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, '{seat}', '{airplane}')"
+                        f"({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, {lugar_sql}, '{airplane}')"
                     )
                     ticket_count += 1
                     if is_first_class:
@@ -309,9 +336,6 @@ with open(output_file, 'w') as f:
                     + ",\n".join(bilhetes) + ";\n\n"
                 )
             sale_id += 1
-
-            if ticket_count >= target_tickets:
-                break
     
     # If we haven't reached our target tickets, process more flights
     if ticket_count < target_tickets:
@@ -325,7 +349,7 @@ with open(output_file, 'w') as f:
             total_seats = len(seats_by_airplane[airplane])
             used_seats = len(assigned_seats[flight_id])
             
-            if used_seats < total_seats:
+            if used_seats < total_seats * 0.5:
                 # This flight has available seats
                 available_flights.append({
                     'flight': flight,
@@ -385,21 +409,29 @@ with open(output_file, 'w') as f:
                     passenger_name = passenger_name.replace("'", "")
                     
                     # Get seat
-                    seat = get_available_seat(flight_id, airplane, is_first_class)
+                    if departure_time <= checkin_limit_date:
+                        seat = get_available_seat(flight_id, airplane, is_first_class)
+                    else:
+                        seat = None
                     if not seat and is_first_class:
                         # Try regular class if first class is full
                         is_first_class = False
-                        seat = get_available_seat(flight_id, airplane, False)
+                        if departure_time <= checkin_limit_date:
+                            seat = get_available_seat(flight_id, airplane, False)
+                        else:
+                            seat = None
                     if not seat:
                         continue  # Skip if still no seats available
                     
                     # Price based on class
                     price = round(random.uniform(400, 1200), 2) if is_first_class else round(random.uniform(80, 350), 2)
-                    
+
+                    lugar_sql = f"'{seat}'" if seat is not None else 'NULL'
+
                     # Write ticket insert
                     field_name = "nome_passageiro"  # Correct field name
                     f.write(f"INSERT INTO bilhete (voo_id, codigo_reserva, {field_name}, preco, prim_classe, lugar, no_serie)\n")
-                    f.write(f"VALUES ({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, '{seat}', '{airplane}');\n\n")
+                    f.write(f"VALUES ({flight_id}, currval('venda_codigo_reserva_seq'), '{passenger_name}', {price}, {'TRUE' if is_first_class else 'FALSE'}, {lugar_sql}, '{airplane}');\n\n")
                     
                     ticket_count += 1
                     if is_first_class:
