@@ -151,6 +151,16 @@ def voos_por_partida_chegada(partida, chegada):
     
     return jsonify(voos), 200
 
+
+def calcula_preco_bilhete(prim_classe):
+    """
+    Função Auxiliar que calcula o preço do bilhete tendo em conta a classe do bilhete.
+    """
+    if prim_classe:
+        return 499.00
+    else:
+        return 248.00
+
 # /compra/<voo>/
 @app.route("/compra/<voo>/", methods=("POST",))
 @limiter.limit("1 per second")
@@ -162,20 +172,16 @@ def compra_voo(voo):
     passageiro, classe de bilhete) especificando os bilhetes a
     comprar.
     """
-    if request.is_json:
-        data = request.get_json()
-        nif = data.get("nif")
-        bilhetes = data.get("bilhetes", [])
-    else:
-        nif = request.args.get("nif")
-        nomes = request.args.getlist("nome")
-        classes = request.args.getlist("prim_classe")
-        bilhetes = []
-        for nome, classe in zip(nomes, classes):
-            bilhetes.append({
-                "nome": nome,
-                "prim_classe": True if classe.lower() == "true" else False
-            })
+
+    nif = request.args.get("nif")
+    nomes = request.args.getlist("nome")
+    classes = request.args.getlist("prim_classe")
+    bilhetes = []
+    for nome, classe in zip(nomes, classes):
+        bilhetes.append({
+            "nome": nome,
+            "prim_classe": True if classe.lower() == "true" else False
+        })
 
     if not nif or not bilhetes:
         return jsonify({"message": "NIF e bilhetes são obrigatórios.", "status": "error"}), 400
@@ -191,7 +197,7 @@ def compra_voo(voo):
                         VALUES (%s, %s, NOW())
                         RETURNING codigo_reserva;
                         """,
-                        (nif, "NULL") # Venda online, balcão é NULL
+                        (nif, None) # Venda online, balcão é NULL
                     )
                     codigo_reserva = cur.fetchone().codigo_reserva
 
@@ -219,7 +225,7 @@ def compra_voo(voo):
                                 voo,
                                 codigo_reserva,
                                 b["nome"],
-                                100,  # ou calcula o preço
+                                calcula_preco_bilhete(classe),  # ou calcula o preço
                                 b["prim_classe"],
                                 None,      # lugar fica NULL
                                 no_serie   # no_serie correto do voo
