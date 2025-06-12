@@ -108,10 +108,7 @@ def gerar_voos_sql():
     # Gerar voos dia por dia
     data_atual = data_inicio
     while data_atual <= data_fim:
-        if data_atual.month == 6:  # Junho - maximizar voos
-            voos_dia = gerar_voos_junho(data_atual, aeroportos, avioes, duracoes_voo, estado_avioes, voos_existentes)
-        else:  # Janeiro a Maio e Julho - mínimo 5 voos por dia
-            voos_dia = gerar_voos_normais(data_atual, aeroportos, avioes, duracoes_voo, estado_avioes, 5, voos_existentes)
+        voos_dia = gerar_voos_junho(data_atual, aeroportos, avioes, duracoes_voo, estado_avioes, voos_existentes)
         
         # Adicionar voos do dia
         for voo in voos_dia:
@@ -148,35 +145,6 @@ def is_same_city_flight(origem, destino):
     '''Retorna True se o voo é entre aeroportos da mesma cidade proibidos.'''
     same_city_pairs = {("LGW", "LHR"), ("LHR", "LGW"), ("MXP", "LIN"), ("LIN", "MXP")}
     return (origem, destino) in same_city_pairs
-
-def gerar_voos_normais(data, aeroportos, avioes, duracoes_voo, estado_avioes, min_voos, voos_existentes):
-    """Gera voos normais garantindo mínimo de voos por dia e voos de retorno"""
-    voos_dia = []
-    voos_retorno_pendentes = []
-    
-    # Garantir pelo menos min_voos voos
-    for _ in range(min_voos):
-        aviao_disponivel = encontrar_aviao_disponivel(avioes, estado_avioes, data)
-        if not aviao_disponivel:
-            break
-            
-        origem = estado_avioes[aviao_disponivel]["aeroporto_atual"]
-        destino = random.choice([a["codigo"] for a in aeroportos if a["codigo"] != origem])
-        
-        voo_ida = criar_voo_unico(aviao_disponivel, origem, destino, data, duracoes_voo, estado_avioes, voos_existentes)
-        if voo_ida:
-            voos_dia.append(voo_ida)
-            # Agendar voo de retorno
-            voos_retorno_pendentes.append((aviao_disponivel, destino, origem))
-    
-    # Processar voos de retorno
-    for aviao, origem, destino in voos_retorno_pendentes:
-        voo_retorno = criar_voo_unico(aviao, origem, destino, data, duracoes_voo, estado_avioes, voos_existentes)
-        
-        if voo_retorno:
-            voos_dia.append(voo_retorno)
-    
-    return voos_dia
 
 def gerar_voos_junho(data, aeroportos, avioes, duracoes_voo, estado_avioes, voos_existentes):
     """

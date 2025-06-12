@@ -151,7 +151,7 @@ def voos_por_partida_chegada(partida, chegada):
     
     return jsonify(voos), 200
 
-
+# TODO: Implementar calculo a partir da rota do voo
 def calcula_preco_bilhete(prim_classe):
     """
     Função Auxiliar que calcula o preço do bilhete tendo em conta a classe do bilhete.
@@ -201,16 +201,6 @@ def compra_voo(voo):
                     )
                     codigo_reserva = cur.fetchone().codigo_reserva
 
-                    # 2. Obter o no_serie do voo
-                    cur.execute(
-                        "SELECT no_serie FROM voo WHERE id = %s;",
-                        (voo,)
-                    )
-                    row = cur.fetchone()
-                    if not row:
-                        raise Exception("Voo não encontrado.")
-                    no_serie = row.no_serie
-
                     bilhete_ids = []
                     for b in bilhetes:
                         cur.execute(
@@ -225,10 +215,10 @@ def compra_voo(voo):
                                 voo,
                                 codigo_reserva,
                                 b["nome"],
-                                calcula_preco_bilhete(classe),  # ou calcula o preço
+                                calcula_preco_bilhete(classe),
                                 b["prim_classe"],
-                                None,      # lugar fica NULL
-                                no_serie   # no_serie correto do voo
+                                None,      # lugar fica NULL, atribuído no check-in
+                                None   # no_serie a NULL, atribuido no check-in
                             )
                         )
                         bilhete_ids.append(cur.fetchone().id)
@@ -292,14 +282,30 @@ def checkin(bilhete):
 
                     lugar = lugar_row.lugar
 
+
+                    # 2. Obter o no_serie do voo
+                    cur.execute(
+                        "SELECT no_serie FROM voo WHERE id = %s;",
+                        (voo_id,)
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        raise Exception("Voo não encontrado.")
+                    no_serie = row.no_serie
+
                     # 3. Atualizar o bilhete com o lugar
                     cur.execute(
                         """
                         UPDATE bilhete
                         SET lugar = %(lugar)s
+                        AND no_serie = %(no_serie)s
                         WHERE id = %(bilhete_id)s;
                         """,
-                        {"lugar": lugar, "bilhete_id": bilhete},
+                        {
+                         "lugar": lugar,
+                         "bilhete_id": bilhete,
+                         "no_serie": no_serie
+                         },
                     )
                     log.debug(f"Check-in realizado com sucesso para o bilhete {bilhete}, lugar {lugar}.")
             except Exception as e:
