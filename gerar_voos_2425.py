@@ -351,6 +351,12 @@ def gerar_voos_dia(data, aeroportos, avioes, duracoes_voo, estado_avioes, voos_e
 
     return voos_dia
 
+def is_same_city_flight(origem, destino):
+    '''Retorna True se o voo é entre aeroportos da mesma cidade proibidos.'''
+    same_city_pairs = {("LGW", "LHR"), ("LHR", "LGW"), ("MXP", "LIN"), ("LIN", "MXP")}
+    return (origem, destino) in same_city_pairs
+
+
 def salvar_voos_sql(voos, nome_arquivo, ano, periodo_desc):
     """Salva a lista de voos em um arquivo SQL"""
     sql_content = f"-- Voos gerados automaticamente para {ano}\n"
