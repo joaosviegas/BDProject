@@ -242,8 +242,9 @@ def checkin(bilhete):
                     # 1. Buscar info do bilhete
                     cur.execute(
                         """
-                        SELECT b.voo_id, b.prim_classe, b.no_serie
+                        SELECT b.voo_id, b.prim_classe, v.no_serie
                         FROM bilhete b
+                        JOIN voo v ON v.id = b.voo_id
                         WHERE b.id = %(bilhete_id)s AND b.lugar IS NULL;
                         """,
                         {"bilhete_id": bilhete},
@@ -263,10 +264,12 @@ def checkin(bilhete):
                         FROM assento a
                         WHERE a.no_serie = %(no_serie)s
                           AND a.prim_classe = %(prim_classe)s
-                          AND a.lugar NOT IN (
-                              SELECT b.lugar
-                              FROM bilhete b
-                              WHERE b.voo_id = %(voo_id)s AND b.no_serie = %(no_serie)s AND b.lugar IS NOT NULL
+                          AND NOT EXISTS (
+                            SELECT 1
+                            FROM bilhete b
+                            WHERE b.lugar = a.lugar
+                              AND b.no_serie = a.no_serie
+                              AND b.voo_id = %(voo_id)s
                           )
                         LIMIT 1;
                         """,
@@ -278,27 +281,14 @@ def checkin(bilhete):
                     )
                     lugar_row = cur.fetchone()
                     if not lugar_row:
-                        return jsonify({"message": "Não há lugares disponíveis nesta classe para este voo.", "status": "error"}), 409
-
+                        return jsonify({"message": "Nenhum lugar disponível na classe selecionada.", "status": "error"}), 404
                     lugar = lugar_row.lugar
-
-
-                    # 2. Obter o no_serie do voo
-                    cur.execute(
-                        "SELECT no_serie FROM voo WHERE id = %s;",
-                        (voo_id,)
-                    )
-                    row = cur.fetchone()
-                    if not row:
-                        raise Exception("Voo não encontrado.")
-                    no_serie = row.no_serie
 
                     # 3. Atualizar o bilhete com o lugar
                     cur.execute(
                         """
                         UPDATE bilhete
-                        SET lugar = %(lugar)s
-                        AND no_serie = %(no_serie)s
+                        SET lugar = %(lugar)s, no_serie = %(no_serie)s
                         WHERE id = %(bilhete_id)s;
                         """,
                         {
