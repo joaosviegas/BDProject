@@ -9,6 +9,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from psycopg.rows import namedtuple_row
 from psycopg_pool import ConnectionPool
+from psycopg.errors import RaiseException
 
 dictConfig(
     {
@@ -408,8 +409,44 @@ def checkin(bilhete):
                          },
                     )
                     log.debug(f"Check-in realizado com sucesso para o bilhete {bilhete}, lugar {lugar}.")
+
+            except RaiseException as e:
+                # Tratar das exceções específicas dos triggers
+                error_message = str(e)
+                log.error(f"Erro no check-in: {error_message}")
+                
+                if "Avião do assento" in error_message:
+                    return jsonify({
+                        "message": "Erro de avião: O avião do assento não corresponde ao avião do voo.",
+                        "details": error_message,
+                        "status": "error"
+                    }), 409
+                    
+                elif "O assento" in error_message and "não existe" in error_message:
+                    return jsonify({
+                        "message": "Lugar inexistente: O assento escolhido não existe neste avião.",
+                        "details": error_message,
+                        "status": "error"
+                    }), 400
+                    
+                elif "Classe do bilhete" in error_message:
+                    return jsonify({
+                        "message": "Classe incorreta: A classe do bilhete não corresponde à classe do assento.",
+                        "details": error_message,
+                        "status": "error"
+                    }), 409
+                    
+                else:
+                    # Mensagem default
+                    return jsonify({
+                        "message": "Erro na validação do check-in.",
+                        "details": error_message,
+                        "status": "error"
+                    }), 400
+                    
             except Exception as e:
-                return jsonify({"message": str(e), "status": "error"}), 500
+                log.error(f"Erro inesperado: {str(e)}")
+                return jsonify({"message": f"Ocorreu um erro: {str(e)}", "status": "error"}), 500
 
     return jsonify({"message": "Check-in realizado com sucesso.", "lugar": lugar}), 200
 
