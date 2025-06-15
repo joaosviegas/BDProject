@@ -281,7 +281,7 @@ def checkin(bilhete):
 
                     # 2. Verificar se já fez o checkin (lugar atribuido)
                     if ticket_exists.lugar is not None:
-                        return jsonify({"message": "Este bilhete já tem check-in realizado.", "status": "error"}), 409
+                        return jsonify({"message": "Este bilhete já fez o check-in.", "status": "error"}), 409
                     
                     # 3. Buscar info do bilhete
                     cur.execute(
