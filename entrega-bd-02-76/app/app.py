@@ -59,15 +59,6 @@ pool = ConnectionPool(
     timeout=5,
 )
 
-
-def is_decimal(s):
-    """Returns True if string is a parseable float number."""
-    try:
-        float(s)
-        return True
-    except ValueError:
-        return False
-
 # /
 @app.route("/", methods=("GET",))
 @limiter.limit("1 per second")
@@ -151,15 +142,90 @@ def voos_por_partida_chegada(partida, chegada):
     
     return jsonify(voos), 200
 
-# TODO: Implementar calculo a partir da rota do voo
-def calcula_preco_bilhete(prim_classe):
+# Preços das rotas fixos
+PRECOS_ROTAS = {
+    # Portugal doméstico
+    frozenset(['LIS', 'OPO']): {'economica': 85.00, 'primeira': 170.00},
+    frozenset(['LIS', 'FAO']): {'economica': 95.00, 'primeira': 190.00},
+    frozenset(['OPO', 'FAO']): {'economica': 100.00, 'primeira': 200.00},
+    
+    # Portugal - Espanha
+    frozenset(['LIS', 'BJZ']): {'economica': 110.00, 'primeira': 220.00},
+    frozenset(['LIS', 'MAD']): {'economica': 130.00, 'primeira': 260.00},
+    frozenset(['LIS', 'BCN']): {'economica': 160.00, 'primeira': 320.00},
+    frozenset(['OPO', 'MAD']): {'economica': 140.00, 'primeira': 280.00},
+    frozenset(['FAO', 'BCN']): {'economica': 180.00, 'primeira': 360.00},
+    frozenset(['FAO', 'BJZ']): {'economica': 120.00, 'primeira': 240.00},
+    frozenset(['OPO', 'BJZ']): {'economica': 115.00, 'primeira': 230.00},
+
+    # Espanha doméstico
+    frozenset(['BJZ', 'MAD']): {'economica': 90.00, 'primeira': 180.00},
+    frozenset(['MAD', 'BCN']): {'economica': 120.00, 'primeira': 240.00},
+    frozenset(['BJZ', 'BCN']): {'economica': 130.00, 'primeira': 260.00},
+
+    # Portugal/Espanha - França/Suíça/Países Baixos
+    frozenset(['LIS', 'CDG']): {'economica': 180.00, 'primeira': 360.00},
+    frozenset(['LIS', 'ZRH']): {'economica': 220.00, 'primeira': 440.00},
+    frozenset(['OPO', 'AMS']): {'economica': 240.00, 'primeira': 480.00},
+    frozenset(['FAO', 'ZRH']): {'economica': 230.00, 'primeira': 460.00},
+    frozenset(['MAD', 'CDG']): {'economica': 160.00, 'primeira': 320.00},
+    frozenset(['BCN', 'CDG']): {'economica': 150.00, 'primeira': 300.00},
+    frozenset(['MAD', 'ZRH']): {'economica': 190.00, 'primeira': 380.00},
+    frozenset(['BCN', 'ZRH']): {'economica': 170.00, 'primeira': 340.00},
+    frozenset(['MAD', 'AMS']): {'economica': 210.00, 'primeira': 420.00},
+
+    # Rotas para Reino Unido
+    frozenset(['LIS', 'LHR']): {'economica': 210.00, 'primeira': 420.00},
+    frozenset(['LIS', 'LGW']): {'economica': 205.00, 'primeira': 410.00},
+    frozenset(['MAD', 'LGW']): {'economica': 190.00, 'primeira': 380.00},
+    frozenset(['BCN', 'LHR']): {'economica': 195.00, 'primeira': 390.00},
+    frozenset(['OPO', 'LHR']): {'economica': 220.00, 'primeira': 440.00},
+
+    # Rotas para Itália
+    frozenset(['LIS', 'MXP']): {'economica': 200.00, 'primeira': 400.00},
+    frozenset(['LIS', 'LIN']): {'economica': 205.00, 'primeira': 410.00},
+    frozenset(['CDG', 'LIN']): {'economica': 145.00, 'primeira': 290.00},
+    frozenset(['CDG', 'MXP']): {'economica': 150.00, 'primeira': 300.00},
+    frozenset(['ZRH', 'MXP']): {'economica': 110.00, 'primeira': 220.00},
+    frozenset(['ZRH', 'LIN']): {'economica': 115.00, 'primeira': 230.00},
+    frozenset(['MAD', 'MXP']): {'economica': 180.00, 'primeira': 360.00},
+    frozenset(['BCN', 'MXP']): {'economica': 170.00, 'primeira': 340.00},
+    frozenset(['AMS', 'MXP']): {'economica': 200.00, 'primeira': 400.00},
+
+    # Outras ligações entre centros europeus
+    frozenset(['CDG', 'AMS']): {'economica': 130.00, 'primeira': 260.00},
+    frozenset(['CDG', 'ZRH']): {'economica': 140.00, 'primeira': 280.00},
+    frozenset(['AMS', 'ZRH']): {'economica': 150.00, 'primeira': 300.00},
+    frozenset(['AMS', 'LHR']): {'economica': 180.00, 'primeira': 360.00},
+    frozenset(['AMS', 'LGW']): {'economica': 175.00, 'primeira': 350.00},
+    frozenset(['LHR', 'MXP']): {'economica': 190.00, 'primeira': 380.00},
+    frozenset(['LGW', 'MXP']): {'economica': 185.00, 'primeira': 370.00},
+}
+
+def calcula_preco_bilhete(prim_classe, voo):
     """
     Função Auxiliar que calcula o preço do bilhete tendo em conta a classe do bilhete.
     """
+    #obtem o aeroporto de partida e chegada do voo
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT partida, chegada
+                FROM voo
+                WHERE id = %(voo_id)s;
+                """,
+                {"voo_id": voo}
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Voo não encontrado.")
+            partida, chegada = row.partida, row.chegada
     if prim_classe:
-        return 499.00
+        return PRECOS_ROTAS.get(frozenset([partida, chegada]), {}).get('primeira', 0.0)
     else:
-        return 248.00
+        return PRECOS_ROTAS.get(frozenset([partida, chegada]), {}).get('economica', 0.0)
+        
 
 # /compra/<voo>/
 @app.route("/compra/<voo>/", methods=("POST",))
@@ -241,7 +307,7 @@ def compra_voo(voo):
                                 voo,
                                 codigo_reserva,
                                 b["nome"],
-                                calcula_preco_bilhete(b["classe"]),
+                                calcula_preco_bilhete(b["classe"], voo),
                                 b["classe"],
                                 None,      # lugar fica NULL, atribuído no check-in
                                 None   # no_serie a NULL, atribuido no check-in
