@@ -37,6 +37,12 @@ def load_flights():
     """Load flight information from voos.txt"""
     print("Reading flight information...")
     flights = []
+
+    # do a sql query to get the flights
+    sqlquery = """
+    SELECT id, airplane, departure_time, arrival_time, departure_airport, arrival_airport
+    """
+
     
     with open('voos.txt', 'r') as file:
         for line in file:
@@ -75,10 +81,10 @@ def calculate_occupancy(departure_time):
     
     if departure_time < current_date:
         # Past flights: high occupancy
-        return random.uniform(0.85, 0.99)
+        return random.uniform(0.65, 0.99)
     else:
         # Future flights: variable occupancy
-        return random.uniform(0.60, 0.90)
+        return random.uniform(0.50, 0.90)
 
 def get_available_seat(used_seats, airplane_seats, is_first_class):
     """Get an available seat of the specified class"""
@@ -133,7 +139,20 @@ def generate_tickets_for_flight(flight, first_class_seats, regular_seats, seats_
     # Ensure we have seats of both classes
     first_class_count = min(len(first_class_seats[airplane]), max(1, seats_to_fill // 10))
     regular_count = min(len(regular_seats[airplane]), seats_to_fill - first_class_count)
+
+    # make the first_class and regular count more different randomly, if is on friday, saturday, or sunday, make it more first class
+    if departure_time.weekday() in [0, 4, 5, 6]:  # Friday, Saturday, Sunday
+        first_class_count *= random.randint(80, 100)/100
+        regular_count *= random.randint(85, 100)/100
+    else:
+        first_class_count *= random.randint(55, 80)/100
+        regular_count *= random.randint(80, 100)/100
     
+    first_class_count = int(first_class_count)
+    regular_count = int(regular_count)
+
+    #print(departure_time.weekday(), first_class_count/regular_count)
+
     # Track used seats for this flight
     used_seats = set()
     
@@ -262,7 +281,7 @@ def main():
         f.write("-- Generated on: " + datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + "\n\n")
         
         # Escrever todas as vendas em batches
-        batch_size = 1000
+        batch_size = 100000
         for i in range(0, len(all_sales), batch_size):
             batch = all_sales[i:i+batch_size]
             f.write("INSERT INTO venda (nif_cliente, balcao, hora) VALUES\n")

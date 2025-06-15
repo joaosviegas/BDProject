@@ -13,10 +13,8 @@ def gerar_voos_2024_2025():
         {"no_serie": "B737-001", "modelo": "Boeing 737"},
         {"no_serie": "B737-002", "modelo": "Boeing 737"},
         {"no_serie": "B737-003", "modelo": "Boeing 737"},
-        {"no_serie": "B737-004", "modelo": "Boeing 737"},
-        {"no_serie": "B737-005", "modelo": "Boeing 737"},
-        {"no_serie": "B787-001", "modelo": "Boeing 787"},
-        {"no_serie": "B787-002", "modelo": "Boeing 787"}
+        {"no_serie": "E190-001", "modelo": "Embraer 190"},
+        {"no_serie": "E190-002", "modelo": "Embraer 190"}
     ]
 
     aeroportos = [
@@ -92,28 +90,12 @@ def gerar_voos_2024_2025():
     for aviao in avioes:
         estado_avioes[aviao["no_serie"]] = {
             "aeroporto_atual": random.choice(airports),
-            "ultima_chegada": datetime.datetime(2023, 12, 31, 23, 59, 59)
+            "ultima_chegada": datetime.datetime(2022, 12, 31, 23, 59, 59)
         }
 
     voos_2024 = []
     voos_existentes = set()  # Para garantir unicidade
     
-    # Período de geração de voos para 2024
-    data_inicio_2024 = datetime.date(2024, 1, 1)
-    data_fim_2024 = datetime.date(2024, 12, 31)
-    
-    # Gerar voos dia por dia para 2024
-    data_atual = data_inicio_2024
-    while data_atual <= data_fim_2024:
-        voos_dia = gerar_exatos_5_voos_dia(
-            data_atual, aeroportos, avioes, duracoes_voo, estado_avioes, voos_existentes
-        )
-        
-        # Adicionar voos do dia
-        for voo in voos_dia:
-            voos_2024.append(voo)
-        
-        data_atual += datetime.timedelta(days=1)
 
     # PARTE 2: GERAR VOOS PARA 2025 (janeiro a julho)
     # Estado dos aviões já está correto após gerar 2024
@@ -122,7 +104,7 @@ def gerar_voos_2024_2025():
     voos_2025 = []
     
     # Período de geração de voos para 2025
-    data_inicio_2025 = datetime.date(2025, 1, 1)
+    data_inicio_2025 = datetime.date(2023, 1, 1)
     data_fim_2025 = datetime.date(2025, 7, 31)
     
     # Gerar voos dia por dia para 2025
@@ -139,6 +121,9 @@ def gerar_voos_2024_2025():
         data_atual += datetime.timedelta(days=1)
     
     # Salvar resultados em arquivos separados
+    file = open("voos.txt", "w", encoding="utf-8")
+    file.close()
+        
     salvar_voos_sql(voos_2024, "voos_2024.sql", "2024", "1 de Janeiro a 31 de Dezembro de 2024")
     salvar_voos_sql(voos_2025, "voos_2025.sql", "2025", "1 de Janeiro a 31 de Julho de 2025")
 
@@ -356,28 +341,31 @@ def is_same_city_flight(origem, destino):
     same_city_pairs = {("LGW", "LHR"), ("LHR", "LGW"), ("MXP", "LIN"), ("LIN", "MXP")}
     return (origem, destino) in same_city_pairs
 
-
+count = 1
 def salvar_voos_sql(voos, nome_arquivo, ano, periodo_desc):
     """Salva a lista de voos em um arquivo SQL"""
+    txt_voo = ""
     sql_content = f"-- Voos gerados automaticamente para {ano}\n"
     sql_content += f"-- Período: {periodo_desc}\n"
     sql_content += f"-- Total de voos: {len(voos)}\n\n"
     
-    # Inserir voos em lotes
-    batch_size = 100
-    for i in range(0, len(voos), batch_size):
-        batch = voos[i:i+batch_size]
-        sql_content += "INSERT INTO voo (no_serie, hora_partida, hora_chegada, partida, chegada) VALUES\n"
-        
-        valores = []
-        for voo in batch:
-            valores.append(f"('{voo['no_serie']}', '{voo['hora_partida']}', '{voo['hora_chegada']}', '{voo['partida']}', '{voo['chegada']}')")
-        
-        sql_content += ",\n".join(valores) + ";\n\n"
+    sql_content += "INSERT INTO voo (id, no_serie, hora_partida, hora_chegada, partida, chegada) VALUES\n"
+
+    global count
+    valores = []
+    for voo in voos:
+        valores.append(f"('{count}', '{voo['no_serie']}', '{voo['hora_partida']}', '{voo['hora_chegada']}', '{voo['partida']}', '{voo['chegada']}')")
+        txt_voo += f"{count}\t{voo['no_serie']}\t{voo['hora_partida']}\t{voo['hora_chegada']}\t{voo['partida']}\t{voo['chegada']}\n"
+        count += 1
+
+    sql_content += ",\n".join(valores) + ";\n\n"
     
     # Salvar no ficheiro
     with open(nome_arquivo, "w", encoding="utf-8") as f:
         f.write(sql_content)
+
+    with open("voos.txt", "a", encoding="utf-8") as f:
+        f.write(txt_voo)
     
     print(f"Ficheiro SQL gerado com {len(voos)} voos para {ano}!")
     print(f"Ficheiro salvo como: {nome_arquivo}")
