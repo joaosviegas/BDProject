@@ -171,17 +171,43 @@ def compra_voo(voo):
     argumentos o nif do cliente, e uma lista de pares (nome de
     passageiro, classe de bilhete) especificando os bilhetes a
     comprar.
+
+    Exemplo de JSON esperado:
+    {
+        "nif": "123456789",
+        "bilhetes": [
+            {"nome": "João Silva", "classe": true},
+            {"nome": "Maria Santos", "classe": false}
+        ]
+    }
+
     """
 
-    nif = request.args.get("nif")
-    nomes = request.args.getlist("nome")
-    classes = request.args.getlist("prim_classe")
     bilhetes = []
-    for nome, classe in zip(nomes, classes):
-        bilhetes.append({
-            "nome": nome,
-            "prim_classe": True if classe.lower() == "true" else False
-        })
+    # Se for JSON
+    if request.is_json:
+        data = request.get_json()
+        nif = data.get("nif")
+        
+
+        if "bilhetes" in data:
+            for b in data["bilhetes"]:
+                bilhetes.append({
+                    "nome": b.get("nome"),
+                    "classe": b.get("classe", False)
+                })
+
+    else:
+        # Se não for JSON, extrair os dados dos parâmetros da query string
+        nif = request.args.get("nif")
+        nomes = request.args.getlist("nome")
+        classes = request.args.getlist("classe")
+  
+        for nome, classe in zip(nomes, classes):
+            bilhetes.append({
+                "nome": nome,
+                "classe": True if classe.lower() == "true" else False
+            })
 
     if not nif or not bilhetes:
         return jsonify({"message": "NIF e bilhetes são obrigatórios.", "status": "error"}), 400
@@ -215,8 +241,8 @@ def compra_voo(voo):
                                 voo,
                                 codigo_reserva,
                                 b["nome"],
-                                calcula_preco_bilhete(classe),
-                                b["prim_classe"],
+                                calcula_preco_bilhete(b["classe"]),
+                                b["classe"],
                                 None,      # lugar fica NULL, atribuído no check-in
                                 None   # no_serie a NULL, atribuido no check-in
                             )
@@ -239,7 +265,25 @@ def checkin(bilhete):
         with conn.cursor() as cur:
             try:
                 with conn.transaction():
-                    # 1. Buscar info do bilhete
+                    cur.execute(
+                        """
+                        SELECT id, lugar
+                        FROM bilhete
+                        WHERE id = %(bilhete_id)s;
+                        """,
+                        {"bilhete_id": bilhete},
+                    )
+                    ticket_exists = cur.fetchone()
+
+                    #1. Verificar se o bilhete existe
+                    if not ticket_exists:
+                        return jsonify({"message": "Bilhete não encontrado.", "status": "error"}), 404
+
+                    # 2. Verificar se já fez o checkin (lugar atribuido)
+                    if ticket_exists.lugar is not None:
+                        return jsonify({"message": "Este bilhete já tem check-in realizado.", "status": "error"}), 409
+                    
+                    # 3. Buscar info do bilhete
                     cur.execute(
                         """
                         SELECT b.voo_id, b.prim_classe, v.no_serie
@@ -251,13 +295,13 @@ def checkin(bilhete):
                     )
                     bilhete_row = cur.fetchone()
                     if not bilhete_row:
-                        return jsonify({"message": "Bilhete não encontrado ou já tem lugar atribuído.", "status": "error"}), 404
-
+                        return jsonify({"message": "Bilhete não encontrado.", "status": "error"}), 404
+                    
                     voo_id = bilhete_row.voo_id
                     prim_classe = bool(bilhete_row.prim_classe)
                     no_serie = bilhete_row.no_serie
 
-                    # 2. Procurar um lugar disponível da classe correta
+                    # 4. Procurar um lugar disponível da classe correta
                     cur.execute(
                         """
                         SELECT a.lugar
@@ -284,7 +328,7 @@ def checkin(bilhete):
                         return jsonify({"message": "Nenhum lugar disponível na classe selecionada.", "status": "error"}), 404
                     lugar = lugar_row.lugar
 
-                    # 3. Atualizar o bilhete com o lugar
+                    # 5. Atualizar o bilhete com o lugar
                     cur.execute(
                         """
                         UPDATE bilhete
