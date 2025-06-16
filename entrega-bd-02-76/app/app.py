@@ -9,6 +9,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from psycopg.rows import namedtuple_row
 from psycopg_pool import ConnectionPool
+import random
 import psycopg
 
 dictConfig(
@@ -190,66 +191,6 @@ def voos_por_partida_chegada(partida, chegada):
     
     return jsonify(voos), 200
 
-# Preços das rotas fixos
-PRECOS_ROTAS = {
-    # Portugal doméstico
-    frozenset(['LIS', 'OPO']): {'economica': 85.00, 'primeira': 170.00},
-    frozenset(['LIS', 'FAO']): {'economica': 95.00, 'primeira': 190.00},
-    frozenset(['OPO', 'FAO']): {'economica': 100.00, 'primeira': 200.00},
-    
-    # Portugal - Espanha
-    frozenset(['LIS', 'BJZ']): {'economica': 110.00, 'primeira': 220.00},
-    frozenset(['LIS', 'MAD']): {'economica': 130.00, 'primeira': 260.00},
-    frozenset(['LIS', 'BCN']): {'economica': 160.00, 'primeira': 320.00},
-    frozenset(['OPO', 'MAD']): {'economica': 140.00, 'primeira': 280.00},
-    frozenset(['FAO', 'BCN']): {'economica': 180.00, 'primeira': 360.00},
-    frozenset(['FAO', 'BJZ']): {'economica': 120.00, 'primeira': 240.00},
-    frozenset(['OPO', 'BJZ']): {'economica': 115.00, 'primeira': 230.00},
-
-    # Espanha doméstico
-    frozenset(['BJZ', 'MAD']): {'economica': 90.00, 'primeira': 180.00},
-    frozenset(['MAD', 'BCN']): {'economica': 120.00, 'primeira': 240.00},
-    frozenset(['BJZ', 'BCN']): {'economica': 130.00, 'primeira': 260.00},
-
-    # Portugal/Espanha - França/Suíça/Países Baixos
-    frozenset(['LIS', 'CDG']): {'economica': 180.00, 'primeira': 360.00},
-    frozenset(['LIS', 'ZRH']): {'economica': 220.00, 'primeira': 440.00},
-    frozenset(['OPO', 'AMS']): {'economica': 240.00, 'primeira': 480.00},
-    frozenset(['FAO', 'ZRH']): {'economica': 230.00, 'primeira': 460.00},
-    frozenset(['MAD', 'CDG']): {'economica': 160.00, 'primeira': 320.00},
-    frozenset(['BCN', 'CDG']): {'economica': 150.00, 'primeira': 300.00},
-    frozenset(['MAD', 'ZRH']): {'economica': 190.00, 'primeira': 380.00},
-    frozenset(['BCN', 'ZRH']): {'economica': 170.00, 'primeira': 340.00},
-    frozenset(['MAD', 'AMS']): {'economica': 210.00, 'primeira': 420.00},
-
-    # Rotas para Reino Unido
-    frozenset(['LIS', 'LHR']): {'economica': 210.00, 'primeira': 420.00},
-    frozenset(['LIS', 'LGW']): {'economica': 205.00, 'primeira': 410.00},
-    frozenset(['MAD', 'LGW']): {'economica': 190.00, 'primeira': 380.00},
-    frozenset(['BCN', 'LHR']): {'economica': 195.00, 'primeira': 390.00},
-    frozenset(['OPO', 'LHR']): {'economica': 220.00, 'primeira': 440.00},
-
-    # Rotas para Itália
-    frozenset(['LIS', 'MXP']): {'economica': 200.00, 'primeira': 400.00},
-    frozenset(['LIS', 'LIN']): {'economica': 205.00, 'primeira': 410.00},
-    frozenset(['CDG', 'LIN']): {'economica': 145.00, 'primeira': 290.00},
-    frozenset(['CDG', 'MXP']): {'economica': 150.00, 'primeira': 300.00},
-    frozenset(['ZRH', 'MXP']): {'economica': 110.00, 'primeira': 220.00},
-    frozenset(['ZRH', 'LIN']): {'economica': 115.00, 'primeira': 230.00},
-    frozenset(['MAD', 'MXP']): {'economica': 180.00, 'primeira': 360.00},
-    frozenset(['BCN', 'MXP']): {'economica': 170.00, 'primeira': 340.00},
-    frozenset(['AMS', 'MXP']): {'economica': 200.00, 'primeira': 400.00},
-
-    # Outras ligações entre centros europeus
-    frozenset(['CDG', 'AMS']): {'economica': 130.00, 'primeira': 260.00},
-    frozenset(['CDG', 'ZRH']): {'economica': 140.00, 'primeira': 280.00},
-    frozenset(['AMS', 'ZRH']): {'economica': 150.00, 'primeira': 300.00},
-    frozenset(['AMS', 'LHR']): {'economica': 180.00, 'primeira': 360.00},
-    frozenset(['AMS', 'LGW']): {'economica': 175.00, 'primeira': 350.00},
-    frozenset(['LHR', 'MXP']): {'economica': 190.00, 'primeira': 380.00},
-    frozenset(['LGW', 'MXP']): {'economica': 185.00, 'primeira': 370.00},
-}
-
 def calcula_preco_bilhete(prim_classe, voo):
     """
     Função Auxiliar que calcula o preço do bilhete tendo em conta a classe do bilhete.
@@ -272,9 +213,10 @@ def calcula_preco_bilhete(prim_classe, voo):
             partida, chegada = row.partida, row.chegada
 
     if prim_classe:
-        return PRECOS_ROTAS.get(frozenset([partida, chegada]), {}).get('primeira', 499.00) # Preço default
+        # a random int value between 450 525
+        return random.randint(450, 825)
     else:
-        return PRECOS_ROTAS.get(frozenset([partida, chegada]), {}).get('economica', 129.99) # Preço default
+        return random.randint(60, 380)
         
 
 # --------------------- /compra/<voo>/ ---------------------
