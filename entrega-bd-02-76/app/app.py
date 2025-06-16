@@ -332,6 +332,10 @@ def compra_voo(voo):
         with conn.cursor() as cur:
             try:
                 with conn.transaction():
+
+                    # 0. Lock the venda table to prevent concurrent modifications and inconsistencies (sell more tickets than available)
+                    cur.execute("LOCK TABLE venda IN EXCLUSIVE MODE;")
+
                     # 1. Inserir venda
                     cur.execute(
                         """
@@ -429,7 +433,7 @@ def checkin(bilhete):
                     prim_classe = bool(bilhete_row.prim_classe)
                     no_serie = bilhete_row.no_serie
 
-                    # 4. Procurar um lugar disponível da classe correta
+                    # 4. Procurar um lugar disponível da classe correta (e dá FOR UPDATE para não que ninguém mais possa ter o mesmo lugar)
                     cur.execute(
                         """
                         SELECT a.lugar
@@ -443,6 +447,7 @@ def checkin(bilhete):
                               AND b.no_serie = a.no_serie
                               AND b.voo_id = %(voo_id)s
                           )
+                        FOR UPDATE
                         LIMIT 1;
                         """,
                         {
@@ -472,7 +477,7 @@ def checkin(bilhete):
                     log.debug(f"Check-in realizado com sucesso para o bilhete {bilhete}, lugar {lugar}.")
 
             except psycopg.Error as e:
-
+                conn.rollback()
                 # Avião do assento não corresponde    
                 if e.sqlstate == 'P0003':
                     log.error(f"Erro no check-in: {str(e).split("\n")[0]}")
@@ -489,6 +494,7 @@ def checkin(bilhete):
                     return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 400
 
             except Exception as e:
+                conn.rollback()
                 log.error(f"Erro inesperado: {str(e).split("\n")[0]}")
                 return jsonify({"message": f"Ocorreu um erro: {str(e).split("\n")[0]}", "status": "error"}), 500
 
