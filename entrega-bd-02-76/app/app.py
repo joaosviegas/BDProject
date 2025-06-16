@@ -60,11 +60,11 @@ pool = ConnectionPool(
     timeout=5,
 )
 
-# /
+# --------------------------- / ----------------------------
 @app.route("/", methods=("GET",))
 @limiter.limit("1 per second")
 def aeroporto_index():
-    """Show all airports."""
+    """ Lista todos os aeroportos (nome e cidade). """
 
     with pool.connection() as conn:
         with conn.cursor() as cur:
@@ -98,11 +98,13 @@ def voos_por_partida(partida):
                 """,
                 {"partida": partida},
             )
+
+            # Se o aeroporto não existir, retorna 404
             if cur.rowcount == 0:
                 log.error(f"Aeroporto {partida} não encontrado.")
                 return jsonify({"message": f"Aeroporto {partida} não encontrado.", "status": "error"}), 404
             
-            # Se o aeroporto existe, busca os voos
+            # Se o aeroporto existe
             voos = cur.execute(
                 """
                 SELECT no_serie, hora_partida, chegada 
@@ -140,7 +142,7 @@ def voos_por_partida_chegada(partida, chegada):
                 {"partida": partida, "chegada": chegada},
             )
             
-            # Se forem da mesma cidade
+            # Junta os codigos com as cidades
             aeroportos_cidades = {}
             for row in cur.fetchall():
                 aeroportos_cidades[row.codigo] = row.cidade
@@ -252,7 +254,8 @@ def calcula_preco_bilhete(prim_classe, voo):
     """
     Função Auxiliar que calcula o preço do bilhete tendo em conta a classe do bilhete.
     """
-    #obtem o aeroporto de partida e chegada do voo
+
+    # Obtem o aeroporto de partida e chegada do voo
     with pool.connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -267,10 +270,11 @@ def calcula_preco_bilhete(prim_classe, voo):
             if not row:
                 raise ValueError("Voo não encontrado.")
             partida, chegada = row.partida, row.chegada
+
     if prim_classe:
-        return PRECOS_ROTAS.get(frozenset([partida, chegada]), {}).get('primeira', 499.00)
+        return PRECOS_ROTAS.get(frozenset([partida, chegada]), {}).get('primeira', 499.00) # Preço default
     else:
-        return PRECOS_ROTAS.get(frozenset([partida, chegada]), {}).get('economica', 129.99)
+        return PRECOS_ROTAS.get(frozenset([partida, chegada]), {}).get('economica', 129.99) # Preço default
         
 
 # --------------------- /compra/<voo>/ ---------------------
@@ -363,10 +367,12 @@ def compra_voo(voo):
 
             except psycopg.Error as e:
                 
+                # Erro de venda depois da partida
                 if e.sqlstate == 'P0001':
                     log.error(f"Erro ao reservar bilhetes: {str(e).split("\n")[0]}")
                     return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 400
-            
+
+                # Erro de capacidade esgotada
                 elif e.sqlstate == 'P0002':
                     log.error(f"Erro ao reservar bilhetes: {str(e).split("\n")[0]}")
                     return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 409
@@ -385,6 +391,7 @@ def checkin(bilhete):
     Faz o check-in de um bilhete, atribuindo-lhe automaticamente
     um assento da classe correspondente.
     """
+
     with pool.connection() as conn:
         with conn.cursor() as cur:
             try:
@@ -418,9 +425,6 @@ def checkin(bilhete):
                         {"bilhete_id": bilhete},
                     )
                     bilhete_row = cur.fetchone()
-                    if not bilhete_row:
-                        return jsonify({"message": "Bilhete não encontrado.", "status": "error"}), 404
-                    
                     voo_id = bilhete_row.voo_id
                     prim_classe = bool(bilhete_row.prim_classe)
                     no_serie = bilhete_row.no_serie
@@ -449,7 +453,7 @@ def checkin(bilhete):
                     )
                     lugar_row = cur.fetchone()
                     if not lugar_row:
-                        return jsonify({"message": "Nenhum lugar disponível na classe selecionada.", "status": "error"}), 404
+                        return jsonify({"message": "Nenhum lugar disponível na classe selecionada.", "status": "error"}), 409
                     lugar = lugar_row.lugar
 
                     # 5. Atualizar o bilhete com o lugar
@@ -469,14 +473,17 @@ def checkin(bilhete):
 
             except psycopg.Error as e:
 
+                # Avião do assento não corresponde    
                 if e.sqlstate == 'P0003':
                     log.error(f"Erro no check-in: {str(e).split("\n")[0]}")
                     return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 400
                 
+                # Erro de Assento não existe no avião
                 elif e.sqlstate == 'P0004':
                     log.error(f"Erro no check-in: {str(e).split("\n")[0]}")
                     return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 404
                 
+                # Erro de classe não correspondente
                 elif e.sqlstate == 'P0005':
                     log.error(f"Erro no check-in: {str(e).split("\n")[0]}")
                     return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 409
