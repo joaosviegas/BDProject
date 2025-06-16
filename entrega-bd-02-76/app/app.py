@@ -9,7 +9,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from psycopg.rows import namedtuple_row
 from psycopg_pool import ConnectionPool
-from psycopg.errors import RaiseException
+import psycopg
 
 dictConfig(
     {
@@ -78,7 +78,7 @@ def aeroporto_index():
 
     return jsonify(aeroportos), 200
 
-# /voos/<partida>
+# -------------------- /voos/<partida> ---------------------
 @app.route("/voos/<partida>/", methods=("GET",))
 @limiter.limit("1 per second")
 def voos_por_partida(partida):
@@ -120,7 +120,7 @@ def voos_por_partida(partida):
     
     return jsonify(voos), 200
 
-# /voos/<partida>/<chegada>
+# -------------- /voos/<partida>/<chegada> -----------------
 @app.route("/voos/<partida>/<chegada>", methods=("GET",))
 @limiter.limit("1 per second")
 def voos_por_partida_chegada(partida, chegada):
@@ -140,16 +140,15 @@ def voos_por_partida_chegada(partida, chegada):
                 {"partida": partida, "chegada": chegada},
             )
             
+            # Se forem da mesma cidade
+            aeroportos_cidades = {}
+            for row in cur.fetchall():
+                aeroportos_cidades[row.codigo] = row.cidade
 
             # Se pelo menos um dos aeroportos não existir
             if cur.rowcount < 2:
                 log.error(f"Aeroporto(s) {partida} ou {chegada} não encontrado(s).")
                 return jsonify({"message": f"Aeroporto(s) {partida} ou {chegada} não encontrado(s).", "status": "error"}), 404
-            
-            # Se forem da mesma cidade
-            aeroportos_cidades = {}
-            for row in cur.fetchall():
-                aeroportos_cidades[row.codigo] = row.cidade
 
             # Se forem da mesma cidade, não há voos
             if aeroportos_cidades[partida] == aeroportos_cidades[chegada]:
@@ -274,7 +273,7 @@ def calcula_preco_bilhete(prim_classe, voo):
         return PRECOS_ROTAS.get(frozenset([partida, chegada]), {}).get('economica', 129.99)
         
 
-# /compra/<voo>/
+# --------------------- /compra/<voo>/ ---------------------
 @app.route("/compra/<voo>/", methods=("POST",))
 @limiter.limit("1 per second")
 def compra_voo(voo):
@@ -361,12 +360,24 @@ def compra_voo(voo):
                             )
                         )
                         bilhete_ids.append(cur.fetchone().id)
+
+            except psycopg.Error as e:
+                
+                if e.sqlstate == 'P0001':
+                    log.error(f"Erro ao reservar bilhetes: {str(e)}")
+                    return jsonify({"message": "Não é possível reservar bilhetes para um voo que já partiu.", "status": "error"}), 400
+            
+                elif e.sqlstate == 'P0002':
+                    log.error(f"Erro ao reservar bilhetes: {str(e)}")
+                    return jsonify({"message": "Capacidade do voo excedida. Não há lugares disponíveis.", "status": "error"}), 409
+
             except Exception as e:
-                return jsonify({"message": str(e), "status": "error"}), 500
+                    return jsonify({"message": str(e), "status": "error"}), 500
 
     return jsonify({"codigo_reserva": codigo_reserva, "bilhete_ids": bilhete_ids}), 201
 
-# /checkin/<bilhete>
+
+# ------------------ /checkin/<bilhete> --------------------
 @app.route("/checkin/<bilhete>/", methods=("PUT",))
 @limiter.limit("1 per second")
 def checkin(bilhete):
@@ -456,45 +467,20 @@ def checkin(bilhete):
                     )
                     log.debug(f"Check-in realizado com sucesso para o bilhete {bilhete}, lugar {lugar}.")
 
-            except psycopg.error as e:
-                # Tratar das exceções específicas do psycopg
-                log.error(f"Erro no check-in: {str(e)}")
-                return jsonify({"message": f"Ocorreu um erro no check-in: {str(e)}", "status": "error"}), 500
+            except psycopg.Error as e:
 
-            except RaiseException as e:
-                # Tratar das exceções específicas dos triggers
-                error_message = str(e)
-                log.error(f"Erro no check-in: {error_message}")
+                if e.sqlstate == 'P0003':
+                    log.error(f"Erro no check-in: {str(e)}")
+                    return jsonify({"message": "O avião do assento não corresponde ao avião do voo.", "status": "error"}), 400
                 
-                if "Avião do assento" in error_message:
-                    return jsonify({
-                        "message": "Erro de avião: O avião do assento não corresponde ao avião do voo.",
-                        "details": error_message,
-                        "status": "error"
-                    }), 409
-                    
-                elif "O assento" in error_message and "não existe" in error_message:
-                    return jsonify({
-                        "message": "Lugar inexistente: O assento escolhido não existe neste avião.",
-                        "details": error_message,
-                        "status": "error"
-                    }), 400
-                    
-                elif "Classe do bilhete" in error_message:
-                    return jsonify({
-                        "message": "Classe incorreta: A classe do bilhete não corresponde à classe do assento.",
-                        "details": error_message,
-                        "status": "error"
-                    }), 409
-                    
-                else:
-                    # Mensagem default
-                    return jsonify({
-                        "message": "Erro na validação do check-in.",
-                        "details": error_message,
-                        "status": "error"
-                    }), 400
-                    
+                elif e.sqlstate == 'P0004':
+                    log.error(f"Erro no check-in: {str(e)}")
+                    return jsonify({"message": "O assento não existe no avião.", "status": "error"}), 404
+                
+                elif e.sqlstate == 'P0005':
+                    log.error(f"Erro no check-in: {str(e)}")
+                    return jsonify({"message": "A classe do assento não corresponde à classe do bilhete.", "status": "error"}), 409
+
             except Exception as e:
                 log.error(f"Erro inesperado: {str(e)}")
                 return jsonify({"message": f"Ocorreu um erro: {str(e)}", "status": "error"}), 500
