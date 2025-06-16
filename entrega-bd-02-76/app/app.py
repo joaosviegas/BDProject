@@ -364,15 +364,15 @@ def compra_voo(voo):
             except psycopg.Error as e:
                 
                 if e.sqlstate == 'P0001':
-                    log.error(f"Erro ao reservar bilhetes: {str(e)}")
-                    return jsonify({"message": "Não é possível reservar bilhetes para um voo que já partiu.", "status": "error"}), 400
+                    log.error(f"Erro ao reservar bilhetes: {str(e).split("\n")[0]}")
+                    return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 400
             
                 elif e.sqlstate == 'P0002':
-                    log.error(f"Erro ao reservar bilhetes: {str(e)}")
-                    return jsonify({"message": "Capacidade do voo excedida. Não há lugares disponíveis.", "status": "error"}), 409
+                    log.error(f"Erro ao reservar bilhetes: {str(e).split("\n")[0]}")
+                    return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 409
 
             except Exception as e:
-                    return jsonify({"message": str(e), "status": "error"}), 500
+                    return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 500
 
     return jsonify({"codigo_reserva": codigo_reserva, "bilhete_ids": bilhete_ids}), 201
 
@@ -470,20 +470,20 @@ def checkin(bilhete):
             except psycopg.Error as e:
 
                 if e.sqlstate == 'P0003':
-                    log.error(f"Erro no check-in: {str(e)}")
-                    return jsonify({"message": "O avião do assento não corresponde ao avião do voo.", "status": "error"}), 400
+                    log.error(f"Erro no check-in: {str(e).split("\n")[0]}")
+                    return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 400
                 
                 elif e.sqlstate == 'P0004':
-                    log.error(f"Erro no check-in: {str(e)}")
-                    return jsonify({"message": "O assento não existe no avião.", "status": "error"}), 404
+                    log.error(f"Erro no check-in: {str(e).split("\n")[0]}")
+                    return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 404
                 
                 elif e.sqlstate == 'P0005':
-                    log.error(f"Erro no check-in: {str(e)}")
-                    return jsonify({"message": "A classe do assento não corresponde à classe do bilhete.", "status": "error"}), 409
+                    log.error(f"Erro no check-in: {str(e).split("\n")[0]}")
+                    return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 409
 
             except Exception as e:
-                log.error(f"Erro inesperado: {str(e)}")
-                return jsonify({"message": f"Ocorreu um erro: {str(e)}", "status": "error"}), 500
+                log.error(f"Erro inesperado: {str(e).split("\n")[0]}")
+                return jsonify({"message": f"Ocorreu um erro: {str(e).split("\n")[0]}", "status": "error"}), 500
 
     return jsonify({"message": "Check-in realizado com sucesso.", "lugar": lugar}), 200
 
