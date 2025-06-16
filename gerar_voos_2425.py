@@ -22,7 +22,7 @@ def gerar_voos_2024_2025():
         {"codigo": "OPO", "nome": "Francisco Sá Carneiro Airport", "cidade": "Porto", "pais": "Portugal"},
         {"codigo": "FAO", "nome": "Faro Airport", "cidade": "Faro", "pais": "Portugal"},
         {"codigo": "BJZ", "nome": "Badajoz Airport", "cidade": "Badajoz", "pais": "Espanha"},
-        {"codigo": "MAD", "nome": "Adolfo Suárez Madrid–Barajas", "cidade": "Madrid", "pais": "Espanha"},
+        {"codigo": "MAD", "nome": "Adolfo Suárez Madrid-Barajas", "cidade": "Madrid", "pais": "Espanha"},
         {"codigo": "BCN", "nome": "Barcelona-El Prat Airport", "cidade": "Barcelona", "pais": "Espanha"},
         {"codigo": "CDG", "nome": "Charles de Gaulle Airport", "cidade": "Paris", "pais": "França"},
         {"codigo": "ZRH", "nome": "Zurich Airport", "cidade": "Zurique", "pais": "Suíça"},
@@ -73,6 +73,8 @@ def gerar_voos_2024_2025():
     duracoes_voo = {}
     velocidade_padrao = 850  # km/h
 
+    aeroportos_last_voo = {}
+
     for aeroporto1 in aeroportos:
         for aeroporto2 in aeroportos:
             if aeroporto1["codigo"] != aeroporto2["codigo"]:
@@ -86,11 +88,16 @@ def gerar_voos_2024_2025():
     # Inicializar estado dos aviões para 2024
     estado_avioes = {}
     airports = [a["codigo"] for a in aeroportos]
+
+    for airport in aeroportos:
+        aeroportos_last_voo[airport["codigo"]] = datetime.datetime(2022, 12, 31, 23, 59, 59)
     
     for aviao in avioes:
         estado_avioes[aviao["no_serie"]] = {
             "aeroporto_atual": random.choice(airports),
-            "ultima_chegada": datetime.datetime(2022, 12, 31, 23, 59, 59)
+            "ultima_chegada": datetime.datetime(2022, 12, 31, 23, 59, 59),
+            "aeroporto_origem": None,
+            "precisa_retornar": False
         }
 
     voos_2024 = []
@@ -111,7 +118,7 @@ def gerar_voos_2024_2025():
     data_atual = data_inicio_2025
     while data_atual <= data_fim_2025:
         voos_dia = gerar_voos_dia(
-            data_atual, aeroportos, avioes, duracoes_voo, estado_avioes, voos_existentes
+            data_atual, aeroportos, avioes, duracoes_voo, estado_avioes, voos_existentes, aeroportos_last_voo
         )
         
         # Adicionar voos do dia
@@ -140,6 +147,7 @@ def gerar_exatos_5_voos_dia(data, aeroportos, avioes, duracoes_voo, estado_avioe
     - Voos proibidos entre aeroportos da mesma cidade
     - Horários realistas (5h-21h partida, chegada até 23h)
     """
+    
     voos_dia = []
     airports = [a["codigo"] for a in aeroportos]
     plane_list = [a["no_serie"] for a in avioes]
@@ -179,11 +187,11 @@ def gerar_exatos_5_voos_dia(data, aeroportos, avioes, duracoes_voo, estado_avioe
             continue
             
         # Escolher destino válido
-        destinos_possiveis = [a for a in airports if a != origem and not is_same_city_flight(origem, a)]
-        
+        destinos_possiveis = obter_destinos_validos(plane, origem, airports, estado_avioes, t_dep, aeroportos)
+
         if not destinos_possiveis:
             continue
-            
+
         destino = random.choice(destinos_possiveis)
         
         # Calcular duração e chegada
@@ -239,13 +247,46 @@ def gerar_exatos_5_voos_dia(data, aeroportos, avioes, duracoes_voo, estado_avioe
         voos_dia.append(voo)
         voos_existentes.add(route_time_key)
         
-        # Atualizar estado do avião
+        if not estado_avioes[plane]["precisa_retornar"]:
+            # Começando nova rota - marcar origem
+            estado_avioes[plane]["aeroporto_origem"] = destino
+            estado_avioes[plane]["precisa_retornar"] = True
+        elif estado_avioes[plane]["precisa_retornar"]:
+            # Retornou à origem - pode começar nova rota
+            estado_avioes[plane]["precisa_retornar"] = False
+            estado_avioes[plane]["aeroporto_origem"] = None
+
         estado_avioes[plane]["aeroporto_atual"] = destino
         estado_avioes[plane]["ultima_chegada"] = t_arr
     
     return voos_dia
 
-def gerar_voos_dia(data, aeroportos, avioes, duracoes_voo, estado_avioes, voos_existentes):
+def obter_destinos_validos(plane, origem, airports, estado_avioes, data, aeroportos_last_voo):
+    """Retorna lista de destinos válidos baseado no estado do avião"""
+    estado = estado_avioes[plane]
+    
+    if estado.get("precisa_retornar", False):
+        # Avião deve retornar ao aeroporto de origem
+        if estado.get("aeroporto_origem") and estado["aeroporto_origem"] != origem:
+            return [estado["aeroporto_origem"]]
+        else:
+            # Se já está na origem, pode escolher novo destino
+            estado["precisa_retornar"] = False
+            estado["aeroporto_origem"] = None
+    
+    # list ordenada por tempo de último voo
+    aeroportos_last_voo_sorted = sorted(aeroportos_last_voo.items(), key=lambda x: x[1])
+    destinos_possiveis = [aeroporto for aeroporto, last_voo in aeroportos_last_voo_sorted if aeroporto != origem and not is_same_city_flight(origem, aeroporto)]
+
+    # verificar se ha algum aeroporto que nao tem voos à mais de 12 horas
+    for aeroporto, last_voo in aeroportos_last_voo_sorted:
+        if last_voo < data - datetime.timedelta(hours=12):
+            print(aeroportos_last_voo_sorted)
+            print(f"Aviso: Aeroporto {aeroporto} não teve voos nas últimas 12 horas.")
+
+    return destinos_possiveis
+
+def gerar_voos_dia(data, aeroportos, avioes, duracoes_voo, estado_avioes, voos_existentes, aeroportos_last_voo):
     """
     Gera voos para um dia de forma otimizada (para 2025):
     - Cada avião voa em cada slot, se possível.
@@ -271,27 +312,24 @@ def gerar_voos_dia(data, aeroportos, avioes, duracoes_voo, estado_avioes, voos_e
             if ultima_chegada + datetime.timedelta(hours=1) > t_dep:
                 t_dep = ultima_chegada + datetime.timedelta(hours=1)
             
-            # Não permitir partidas depois das 21h
-            if t_dep.time() > datetime.time(21, 0):
-                continue
-                
             # Escolher destino diferente do atual
-            destinos_possiveis = [a for a in airports if a != origem]
-            random.shuffle(destinos_possiveis)
-            
+            destinos_possiveis = obter_destinos_validos(plane, origem, airports, estado_avioes, t_dep, aeroportos_last_voo)
+
+            # Não permitir partidas entre as 1AM e 5AM
+            if t_dep.time() > datetime.time(23, 59) and len(destinos_possiveis) > 1:
+                continue
+
             voo_agendado = False
             for destino in destinos_possiveis:
                 # Verificar se é voo proibido (mesma cidade)
-                if is_same_city_flight(origem, destino):
-                    continue
                 
                 # Calcular duração e chegada
                 duracao = duracoes_voo.get((origem, destino), 60)
                 t_arr = t_dep + datetime.timedelta(minutes=duracao)
                 
                 # Não permitir chegada depois das 23h
-                if t_arr.time() > datetime.time(23, 0):
-                    continue
+                #if t_arr.time() > datetime.time(23, 59) and len(destinos_possiveis) > 1:
+                #    continue
                 
                 # Verificar unicidade (hora_partida, partida, chegada)
                 route_time_key = (t_dep.strftime("%Y-%m-%d %H:%M:%S"), origem, destino)
@@ -311,6 +349,8 @@ def gerar_voos_dia(data, aeroportos, avioes, duracoes_voo, estado_avioes, voos_e
                             route_time_key = route_time_key_ajustado
                             break
                     else:
+                        if len(destinos_possiveis) <= 1:
+                            print("Não conseguiu ajustar horário para voo:", origem, "->", destino, "hora:", t_dep.strftime("%Y-%m-%d %H:%M:%S"))
                         continue  # Não conseguiu encontrar horário disponível
                 
                 # Criar o voo
@@ -321,11 +361,29 @@ def gerar_voos_dia(data, aeroportos, avioes, duracoes_voo, estado_avioes, voos_e
                     "partida": origem,
                     "chegada": destino
                 }
+
+                # verificar se não existe um voo que parte à mesma hora, e que tem a mesma partida e chegada
+                if any(v['hora_partida'] == voo['hora_partida'] and v['partida'] == voo['partida'] and v['chegada'] == voo['chegada'] for v in voos_dia):
+                    if len(destinos_possiveis) <= 1:
+                            print("222 Não conseguiu ajustar horário para voo:", origem, "->", destino, "hora:", t_dep.strftime("%Y-%m-%d %H:%M:%S"))
+                    continue
                 
                 voos_dia.append(voo)
                 voos_existentes.add(route_time_key)
+
+                # Atualizar o last voo do aeroporto. deve sempre ser o mais recente entre o proprio, a hora_partida e a hora_chegada
+                aeroportos_last_voo[origem] = max(aeroportos_last_voo[origem], t_dep)
+                aeroportos_last_voo[destino] = max(aeroportos_last_voo[destino], t_arr)
                 
-                # Atualizar estado do avião
+                if not estado_avioes[plane].get("precisa_retornar", False) and estado_avioes[plane].get("aeroporto_origem") is None:
+                    # Começando nova rota - marcar origem
+                    estado_avioes[plane]["aeroporto_origem"] = origem
+                    estado_avioes[plane]["precisa_retornar"] = True
+                elif estado_avioes[plane].get("precisa_retornar", False) and destino == estado_avioes[plane].get("aeroporto_origem"):
+                    # Retornou à origem - pode começar nova rota
+                    estado_avioes[plane]["precisa_retornar"] = False
+                    estado_avioes[plane]["aeroporto_origem"] = None
+
                 estado_avioes[plane]["aeroporto_atual"] = destino
                 estado_avioes[plane]["ultima_chegada"] = t_arr
                 
