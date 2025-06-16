@@ -375,7 +375,7 @@ def compra_voo(voo):
                 # Erro de capacidade esgotada
                 elif e.sqlstate == 'P0002':
                     log.error(f"Erro ao reservar bilhetes: {str(e).split("\n")[0]}")
-                    return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 409
+                    return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 400
 
             except Exception as e:
                     return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 500
@@ -412,7 +412,7 @@ def checkin(bilhete):
 
                     # 2. Verificar se já fez o checkin (lugar atribuido)
                     if ticket_exists.lugar is not None:
-                        return jsonify({"message": "Este bilhete já fez o check-in.", "status": "error"}), 409
+                        return jsonify({"message": "Este bilhete já fez o check-in.", "status": "error"}), 400
                     
                     # 3. Buscar info do bilhete
                     cur.execute(
@@ -453,7 +453,7 @@ def checkin(bilhete):
                     )
                     lugar_row = cur.fetchone()
                     if not lugar_row:
-                        return jsonify({"message": "Nenhum lugar disponível na classe selecionada.", "status": "error"}), 409
+                        return jsonify({"message": "Nenhum lugar disponível na classe selecionada.", "status": "error"}), 404
                     lugar = lugar_row.lugar
 
                     # 5. Atualizar o bilhete com o lugar
@@ -486,7 +486,7 @@ def checkin(bilhete):
                 # Erro de classe não correspondente
                 elif e.sqlstate == 'P0005':
                     log.error(f"Erro no check-in: {str(e).split("\n")[0]}")
-                    return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 409
+                    return jsonify({"message": str(e).split("\n")[0], "status": "error"}), 400
 
             except Exception as e:
                 log.error(f"Erro inesperado: {str(e).split("\n")[0]}")
