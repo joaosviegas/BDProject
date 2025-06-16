@@ -90,6 +90,19 @@ def voos_por_partida(partida):
     
     with pool.connection() as conn:
         with conn.cursor() as cur:
+
+            # Verifica se o aeroporto de partida existe
+            cur.execute(
+                """
+                SELECT nome FROM aeroporto WHERE codigo = %(partida)s;
+                """,
+                {"partida": partida},
+            )
+            if cur.rowcount == 0:
+                log.error(f"Aeroporto {partida} não encontrado.")
+                return jsonify({"message": f"Aeroporto {partida} não encontrado.", "status": "error"}), 404
+            
+            # Se o aeroporto existe, busca os voos
             voos = cur.execute(
                 """
                 SELECT no_serie, hora_partida, chegada 
@@ -119,6 +132,39 @@ def voos_por_partida_chegada(partida, chegada):
     
     with pool.connection() as conn:
         with conn.cursor() as cur:
+            # Verifica se os aeroportos de partida e chegada existem
+            cur.execute(
+                """
+                SELECT codigo, cidade FROM aeroporto WHERE codigo = %(partida)s OR codigo = %(chegada)s;
+                """,
+                {"partida": partida, "chegada": chegada},
+            )
+            
+
+            # Se pelo menos um dos aeroportos não existir
+            if cur.rowcount < 2:
+                log.error(f"Aeroporto(s) {partida} ou {chegada} não encontrado(s).")
+                return jsonify({"message": f"Aeroporto(s) {partida} ou {chegada} não encontrado(s).", "status": "error"}), 404
+            
+            # Se forem da mesma cidade
+            aeroportos_cidades = {}
+            for row in cur.fetchall():
+                aeroportos_cidades[row.codigo] = row.cidade
+
+            # Se forem da mesma cidade, não há voos
+            if aeroportos_cidades[partida] == aeroportos_cidades[chegada]:
+                log.error(f"Aeroportos de {partida} e {chegada} estão na mesma cidade ({aeroportos_cidades[partida]}), não há voos entre aeroportos da mesma cidade.")
+                return jsonify({
+                    "message": f"Aeroportos de {partida} e {chegada} estão na mesma cidade ({aeroportos_cidades[partida]}). Não há voos entre aeroportos da mesma cidade.", 
+                    "status": "error"
+                }), 400
+            
+            # Se existirem mas forem da mesma ciade, não existem voos, 400 Bad Request
+            if partida == chegada:
+                log.error(f"Partida e chegada são o mesmo aeroporto: {partida}.")
+                return jsonify({"message": f"Partida e chegada são o mesmo aeroporto: {partida}.", "status": "error"}), 400
+            
+            # Se os aeroportos existem, busca os voos disponíveis
             voos = cur.execute(
                 """
                 SELECT v.no_serie, v.hora_partida
@@ -223,9 +269,9 @@ def calcula_preco_bilhete(prim_classe, voo):
                 raise ValueError("Voo não encontrado.")
             partida, chegada = row.partida, row.chegada
     if prim_classe:
-        return PRECOS_ROTAS.get(frozenset([partida, chegada]), {}).get('primeira', 0.0)
+        return PRECOS_ROTAS.get(frozenset([partida, chegada]), {}).get('primeira', 499.00)
     else:
-        return PRECOS_ROTAS.get(frozenset([partida, chegada]), {}).get('economica', 0.0)
+        return PRECOS_ROTAS.get(frozenset([partida, chegada]), {}).get('economica', 129.99)
         
 
 # /compra/<voo>/
@@ -273,7 +319,7 @@ def compra_voo(voo):
         for nome, classe in zip(nomes, classes):
             bilhetes.append({
                 "nome": nome,
-                "classe": True if classe.lower() == "true" else False
+                "classe": True if (classe.lower() == "true" or classe.lower() == "t") else False
             })
 
     if not nif or not bilhetes:
@@ -409,6 +455,11 @@ def checkin(bilhete):
                          },
                     )
                     log.debug(f"Check-in realizado com sucesso para o bilhete {bilhete}, lugar {lugar}.")
+
+            except psycopg.error as e:
+                # Tratar das exceções específicas do psycopg
+                log.error(f"Erro no check-in: {str(e)}")
+                return jsonify({"message": f"Ocorreu um erro no check-in: {str(e)}", "status": "error"}), 500
 
             except RaiseException as e:
                 # Tratar das exceções específicas dos triggers
