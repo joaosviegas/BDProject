@@ -2,6 +2,77 @@ import datetime
 import random
 import math
 
+def gerar_voos_todas_combinacoes(data, aeroportos, avioes, duracoes_voo, estado_avioes, voos_existentes):
+    """Gera voos para todas as combinações possíveis de aeroportos no último dia"""
+    voos_finais = []
+    airports = [a["codigo"] for a in aeroportos]
+    
+    # Gerar todas as combinações válidas
+    combinacoes_restantes = []
+    for origem in airports:
+        for destino in airports:
+            if origem != destino and not is_same_city_flight(origem, destino):
+                combinacoes_restantes.append((origem, destino))
+    
+    print(f"Tentando gerar {len(combinacoes_restantes)} voos para todas as combinações no último dia ({data})")
+    
+    # Começar a partir da última chegada de cada avião
+    hora_atual = datetime.datetime.combine(data, datetime.time(5, 0))
+    plane_list = [a["no_serie"] for a in avioes]
+    
+    # Continuar até que não seja possível gerar mais voos
+    while combinacoes_restantes:
+        voos_gerados_nesta_ronda = 0
+        
+        for plane in plane_list:
+            if not combinacoes_restantes:
+                break
+                
+            origem_atual = estado_avioes[plane]["aeroporto_atual"]
+            ultima_chegada = estado_avioes[plane]["ultima_chegada"]
+            
+            # Encontrar uma combinação que parte do aeroporto atual do avião
+            combinacao_encontrada = None
+            for combinacao in combinacoes_restantes:
+                if combinacao[0] == origem_atual:
+                    combinacao_encontrada = combinacao
+                    break
+            
+            if combinacao_encontrada:
+                origem, destino = combinacao_encontrada
+                duracao = duracoes_voo.get((origem, destino), 60)
+                
+                # Calcular horários
+                t_dep = max(hora_atual, ultima_chegada + datetime.timedelta(minutes=30))
+                t_arr = t_dep + datetime.timedelta(minutes=duracao)
+                
+                # Criar voo
+                voo = {
+                    "no_serie": plane,
+                    "hora_partida": t_dep.strftime("%Y-%m-%d %H:%M:%S"),
+                    "hora_chegada": t_arr.strftime("%Y-%m-%d %H:%M:%S"),
+                    "partida": origem,
+                    "chegada": destino
+                }
+                voos_finais.append(voo)
+                
+                # Atualizar estado do avião
+                estado_avioes[plane]["aeroporto_atual"] = destino
+                estado_avioes[plane]["ultima_chegada"] = t_arr
+                
+                # Remover combinação da lista
+                combinacoes_restantes.remove(combinacao_encontrada)
+                voos_gerados_nesta_ronda += 1
+        
+        # Se não conseguiu gerar nenhum voo nesta ronda, parar para evitar loop infinito
+        if voos_gerados_nesta_ronda == 0:
+            print(f"Não foi possível gerar voos para {len(combinacoes_restantes)} combinações restantes")
+            print("Combinações não realizadas:", combinacoes_restantes[:10], "..." if len(combinacoes_restantes) > 10 else "")
+            break
+    
+    print(f"Gerados {len(voos_finais)} voos adicionais para cobrir combinações")
+    return voos_finais
+
 def gerar_voos_2024_2025():
     # Definições comuns
     avioes = [
@@ -147,6 +218,13 @@ def gerar_voos_2024_2025():
         
         data_atual += datetime.timedelta(days=1)
     
+    if data_atual > data_inicio_2025:  # Only if we generated some days
+        ultima_data = data_atual - datetime.timedelta(days=1)
+        voos_finais = gerar_voos_todas_combinacoes(
+            ultima_data, aeroportos, avioes, duracoes_voo, estado_avioes, voos_existentes
+        )
+        voos_2025.extend(voos_finais)
+
     # Salvar resultados em arquivos separados
     file = open("voos.txt", "w", encoding="utf-8")
     file.close()
@@ -281,12 +359,19 @@ def gerar_exatos_5_voos_dia(data, aeroportos, avioes, duracoes_voo, estado_avioe
     
     return voos_dia
 
-airport_circular_index = 0
+airport_circular_index = 0  # Índice para seleção circular de aeroportos
+
+airport_connections = {}  # Track connections: {(origem, destino): last_date}
 
 def obter_destinos_validos(plane, origem, airports, estado_avioes, data, aeroportos_last_voo):
     """Retorna lista de destinos válidos usando seleção circular de aeroportos"""
-    global airport_circular_index
+    global airport_circular_index, airport_connections
     
+    # Check for airports not serviced in last 12 hours (existing code)
+    for airport in airports:
+        if aeroportos_last_voo[airport] < data - datetime.timedelta(hours=11, minutes=59):
+            print(f"Aviso: O aeroporto {airport} não teve voos nas últimas 12 horas. Considerando-o para seleção.", data)
+
     estado = estado_avioes[plane]
     stage = estado.get("route_stage", "free")
     
@@ -302,7 +387,7 @@ def obter_destinos_validos(plane, origem, airports, estado_avioes, data, aeropor
         if stopover and stopover != origem:
             return [stopover]
     
-    # For "free" stage, use circular selection
+    # For "free" stage, use connectivity-aware selection
     # Filter out same airport and same city airports
     valid_airports = [airport for airport in airports 
                      if airport != origem and not is_same_city_flight(origem, airport)]
@@ -310,19 +395,25 @@ def obter_destinos_validos(plane, origem, airports, estado_avioes, data, aeropor
     if not valid_airports:
         return []
     
-    # Find next valid airport in circular order
+    # Regular circular selection (existing logic)
     attempts = 0
-    while attempts < len(airports):  # Prevent infinite loop
+    while attempts < len(airports):
         current_airport = airports[airport_circular_index % len(airports)]
-        airport_circular_index += 1  # Move to next for next time
+        airport_circular_index += 1
         
         if current_airport in valid_airports:
+            # Update connection tracking for regular selection too
+            current_date = data.date() if hasattr(data, 'date') else data
+            airport_connections[(origem, current_airport)] = current_date
             return [current_airport]
         
         attempts += 1
     
-    # Fallback - return first valid airport
-    return [valid_airports[0]]
+    # Fallback - return first valid airport and update tracking
+    selected = valid_airports[0]
+    current_date = data.date() if hasattr(data, 'date') else data
+    airport_connections[(origem, selected)] = current_date
+    return [selected]
 
 def gerar_voos_dia(data, aeroportos, avioes, duracoes_voo, estado_avioes, voos_existentes, aeroportos_last_voo):
     """
