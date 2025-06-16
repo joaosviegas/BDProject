@@ -148,6 +148,11 @@ def voos_por_partida_chegada(partida, chegada):
             for row in cur.fetchall():
                 aeroportos_cidades[row.codigo] = row.cidade
 
+            # Se existirem mas forem da mesma ciade, não existem voos, 400 Bad Request
+            if partida == chegada:
+                log.error(f"Partida e chegada são o mesmo aeroporto: {partida}.")
+                return jsonify({"message": f"Partida e chegada são o mesmo aeroporto: {partida}.", "status": "error"}), 400
+            
             # Se pelo menos um dos aeroportos não existir
             if cur.rowcount < 2:
                 log.error(f"Aeroporto(s) {partida} ou {chegada} não encontrado(s).")
@@ -160,11 +165,6 @@ def voos_por_partida_chegada(partida, chegada):
                     "message": f"Aeroportos de {partida} e {chegada} estão na mesma cidade ({aeroportos_cidades[partida]}). Não há voos entre aeroportos da mesma cidade.", 
                     "status": "error"
                 }), 400
-            
-            # Se existirem mas forem da mesma ciade, não existem voos, 400 Bad Request
-            if partida == chegada:
-                log.error(f"Partida e chegada são o mesmo aeroporto: {partida}.")
-                return jsonify({"message": f"Partida e chegada são o mesmo aeroporto: {partida}.", "status": "error"}), 400
             
             # Se os aeroportos existem, busca os voos disponíveis
             voos = cur.execute(
