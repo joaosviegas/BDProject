@@ -22,7 +22,7 @@ def gerar_voos_2024_2025():
         {"codigo": "OPO", "nome": "Francisco Sá Carneiro Airport", "cidade": "Porto", "pais": "Portugal"},
         {"codigo": "FAO", "nome": "Faro Airport", "cidade": "Faro", "pais": "Portugal"},
         {"codigo": "BJZ", "nome": "Badajoz Airport", "cidade": "Badajoz", "pais": "Espanha"},
-        {"codigo": "MAD", "nome": "Adolfo Suárez Madrid-Barajas", "cidade": "Madrid", "pais": "Espanha"},
+        {"codigo": "MAD", "nome": "Adolfo Suárez Madrid–Barajas", "cidade": "Madrid", "pais": "Espanha"},
         {"codigo": "BCN", "nome": "Barcelona-El Prat Airport", "cidade": "Barcelona", "pais": "Espanha"},
         {"codigo": "CDG", "nome": "Charles de Gaulle Airport", "cidade": "Paris", "pais": "França"},
         {"codigo": "ZRH", "nome": "Zurich Airport", "cidade": "Zurique", "pais": "Suíça"},
@@ -90,12 +90,12 @@ def gerar_voos_2024_2025():
     airports = [a["codigo"] for a in aeroportos]
 
     for airport in aeroportos:
-        aeroportos_last_voo[airport["codigo"]] = datetime.datetime(2022, 12, 31, 23, 59, 59)
+        aeroportos_last_voo[airport["codigo"]] = datetime.datetime(2020, 12, 31, 23, 59, 59)
     
     for aviao in avioes:
         estado_avioes[aviao["no_serie"]] = {
             "aeroporto_atual": random.choice(airports),
-            "ultima_chegada": datetime.datetime(2022, 12, 31, 23, 59, 59),
+            "ultima_chegada": datetime.datetime(2020, 12, 31, 23, 59, 59),
             "aeroporto_origem": None,
             "precisa_retornar": False
         }
@@ -111,7 +111,7 @@ def gerar_voos_2024_2025():
     voos_2025 = []
     
     # Período de geração de voos para 2025
-    data_inicio_2025 = datetime.date(2023, 1, 1)
+    data_inicio_2025 = datetime.date(2021, 1, 1)
     data_fim_2025 = datetime.date(2025, 7, 31)
     
     # Gerar voos dia por dia para 2025
@@ -316,8 +316,6 @@ def gerar_voos_dia(data, aeroportos, avioes, duracoes_voo, estado_avioes, voos_e
             destinos_possiveis = obter_destinos_validos(plane, origem, airports, estado_avioes, t_dep, aeroportos_last_voo)
 
             # Não permitir partidas entre as 1AM e 5AM
-            if t_dep.time() > datetime.time(23, 59) and len(destinos_possiveis) > 1:
-                continue
 
             voo_agendado = False
             for destino in destinos_possiveis:
