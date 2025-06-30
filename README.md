@@ -1,4 +1,4 @@
-<h1 align="center"> Aviacao Database Project </h1>
+<h1 align="center"> Database Project </h1>
 
 This project was developed for the "Bases de Dados" course @IST - Instituto Superior Técnico (2024/2025) and is organized in two main parts: database modeling and development of a RESTful API.
 
@@ -7,6 +7,7 @@ This project was developed for the "Bases de Dados" course @IST - Instituto Supe
 ### 📁 entrega-01-76
 The first delivery focused on the **design and analysis** of the database:
 - Includes an **E-A (Entity-Association) model** of the aviation domain.
+- Conversion of the **E-A model** to it's respective **Relational Model**.
 - Contains **Relational Algebra exercises** analyzing operations over the schema.
 - No implementation or code was required at this stage.
 
@@ -39,4 +40,3 @@ All operations are **transactional**, protected against **SQL injection**, and r
 
 - The API was tested and deployed in the course-provided Docker environment.
 - All SQL code has been validated for execution in the lab workspace.
-
