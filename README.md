@@ -1,6 +1,6 @@
-<h1 align="center"> Database Project </h1>
+<h1 align="center"> Database Project - Aviation Database </h1>
 
-This project was developed for the "Bases de Dados" course @IST - Instituto Superior Técnico (2024/2025) and is organized in two main parts: database modeling and development of a RESTful API.
+This project was developed for the "Bases de Dados" course @IST Instituto Superior Técnico (2024/2025) and is organized in two main parts: database modeling and development of a RESTful API.
 
 ## Project Structure
 
